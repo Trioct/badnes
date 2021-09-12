@@ -15,8 +15,8 @@ pub const InesError = error{
 };
 
 pub const RomInfo = struct {
-    // cart will take ownership of roms
-    rom: ?Rom,
+    prg_rom: ?[]u8,
+    chr_rom: ?[]u8,
 
     prg_rom_mul_16kb: u8,
     prg_ram_mul_8kb: ?u8,
@@ -38,8 +38,11 @@ pub const RomInfo = struct {
     };
 
     pub fn deinit(self: RomInfo, allocator: *Allocator) void {
-        if (self.rom) |rom| {
-            rom.deinit(allocator);
+        if (self.prg_rom) |prg| {
+            allocator.free(prg);
+        }
+        if (self.chr_rom) |chr| {
+            allocator.free(chr);
         }
     }
 
@@ -106,10 +109,8 @@ pub const RomInfo = struct {
         };
 
         return RomInfo{
-            .rom = Rom{
-                .prg = prg_rom,
-                .chr = chr_rom,
-            },
+            .prg_rom = prg_rom,
+            .chr_rom = chr_rom,
 
             .prg_rom_mul_16kb = prg_rom_mul_16kb,
             .prg_ram_mul_8kb = prg_ram_mul_8kb,

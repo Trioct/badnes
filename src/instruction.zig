@@ -11,6 +11,8 @@ pub const Precision = enum {
 pub fn Op(comptime precision: Precision) type {
     _ = precision;
     return enum {
+        OpIll,
+
         OpAdc,
         OpAnd,
         OpAsl,
@@ -114,244 +116,217 @@ pub const Addressing = enum {
             .ZeroPageY => 2,
         };
     }
-
-    pub fn toString(self: Addressing) ?[]const u8 {
-        return switch (self) {
-            .Accumulator => "A",
-            .Absolute => "$word",
-            .AbsoluteX => "$word,X",
-            .AbsoluteY => "$word,Y",
-            .Immediate => "#$byte",
-            .Implied => null,
-            .Indirect => "($word)",
-            .IndirectX => "($byte,X)",
-            .IndirectY => "($byte),Y",
-            .Relative => "$byte",
-            .ZeroPage => "$byte",
-            .ZeroPageX => "$byte,X",
-            .ZeroPageY => "$byte,Y",
-        };
-    }
 };
 
 pub fn Instruction(comptime precision: Precision) type {
-    return struct {
-        op: Op(precision),
-        addressing: Addressing,
+    switch (precision) {
+        .Fast => return struct {
+            op: Op(.Fast),
+            addressing: Addressing,
+            cycles: u3,
+            var_cycles: bool = false,
 
-        pub fn decode(opcode: u8) @This() {
-            return switch (precision) {
-                .Fast => decodeFast(opcode),
-                .Accurate => decodeAccurate(opcode),
-            };
-        }
+            pub const decode = decodeFast;
+        },
+        .Accurate => return struct {
+            op: Op(.Accurate),
+            addressing: Addressing,
 
-        pub fn format(self: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = options;
-            const addressing_str = self.addressing.toString();
-            if (fmt.len == 0) { // or comptime std.mem.eql(u8, fmt, "p")) {
-                if (addressing_str) |str| {
-                    return std.fmt.format(writer, "{s} {s}", .{ self.op.toString(), str });
-                } else {
-                    return std.fmt.format(writer, "{s}", .{self.op.toString()});
-                }
-            } else {
-                @compileError("Unknown format character: '" ++ fmt ++ "'");
-            }
-        }
-    };
+            pub const decode = decodeAccurate;
+        },
+    }
 }
 
 fn decodeFast(opcode: u8) Instruction(.Fast) {
     const OpFast = Op(.Fast);
 
-    switch (opcode) {
-        0x69 => return .{ .op = OpFast.OpAdc, .addressing = Addressing.Immediate },
-        0x65 => return .{ .op = OpFast.OpAdc, .addressing = Addressing.ZeroPage },
-        0x75 => return .{ .op = OpFast.OpAdc, .addressing = Addressing.ZeroPageX },
-        0x6d => return .{ .op = OpFast.OpAdc, .addressing = Addressing.Absolute },
-        0x7d => return .{ .op = OpFast.OpAdc, .addressing = Addressing.AbsoluteX },
-        0x79 => return .{ .op = OpFast.OpAdc, .addressing = Addressing.AbsoluteY },
-        0x61 => return .{ .op = OpFast.OpAdc, .addressing = Addressing.IndirectX },
-        0x71 => return .{ .op = OpFast.OpAdc, .addressing = Addressing.IndirectY },
+    return switch (opcode) {
+        0x69 => .{ .op = OpFast.OpAdc, .addressing = Addressing.Immediate, .cycles = 2 },
+        0x65 => .{ .op = OpFast.OpAdc, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0x75 => .{ .op = OpFast.OpAdc, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0x6d => .{ .op = OpFast.OpAdc, .addressing = Addressing.Absolute, .cycles = 4 },
+        0x7d => .{ .op = OpFast.OpAdc, .addressing = Addressing.AbsoluteX, .cycles = 4, .var_cycles = true },
+        0x79 => .{ .op = OpFast.OpAdc, .addressing = Addressing.AbsoluteY, .cycles = 4, .var_cycles = true },
+        0x61 => .{ .op = OpFast.OpAdc, .addressing = Addressing.IndirectX, .cycles = 6 },
+        0x71 => .{ .op = OpFast.OpAdc, .addressing = Addressing.IndirectY, .cycles = 5, .var_cycles = true },
 
-        0x29 => return .{ .op = OpFast.OpAnd, .addressing = Addressing.Immediate },
-        0x25 => return .{ .op = OpFast.OpAnd, .addressing = Addressing.ZeroPage },
-        0x35 => return .{ .op = OpFast.OpAnd, .addressing = Addressing.ZeroPageX },
-        0x2d => return .{ .op = OpFast.OpAnd, .addressing = Addressing.Absolute },
-        0x3d => return .{ .op = OpFast.OpAnd, .addressing = Addressing.AbsoluteX },
-        0x39 => return .{ .op = OpFast.OpAnd, .addressing = Addressing.AbsoluteY },
-        0x21 => return .{ .op = OpFast.OpAnd, .addressing = Addressing.IndirectX },
-        0x31 => return .{ .op = OpFast.OpAnd, .addressing = Addressing.IndirectY },
+        0x29 => .{ .op = OpFast.OpAnd, .addressing = Addressing.Immediate, .cycles = 2 },
+        0x25 => .{ .op = OpFast.OpAnd, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0x35 => .{ .op = OpFast.OpAnd, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0x2d => .{ .op = OpFast.OpAnd, .addressing = Addressing.Absolute, .cycles = 4 },
+        0x3d => .{ .op = OpFast.OpAnd, .addressing = Addressing.AbsoluteX, .cycles = 4, .var_cycles = true },
+        0x39 => .{ .op = OpFast.OpAnd, .addressing = Addressing.AbsoluteY, .cycles = 4, .var_cycles = true },
+        0x21 => .{ .op = OpFast.OpAnd, .addressing = Addressing.IndirectX, .cycles = 6 },
+        0x31 => .{ .op = OpFast.OpAnd, .addressing = Addressing.IndirectY, .cycles = 5, .var_cycles = true },
 
-        0x0a => return .{ .op = OpFast.OpAsl, .addressing = Addressing.Accumulator },
-        0x06 => return .{ .op = OpFast.OpAsl, .addressing = Addressing.ZeroPage },
-        0x16 => return .{ .op = OpFast.OpAsl, .addressing = Addressing.ZeroPageX },
-        0x0e => return .{ .op = OpFast.OpAsl, .addressing = Addressing.Absolute },
-        0x1e => return .{ .op = OpFast.OpAsl, .addressing = Addressing.AbsoluteX },
+        0x0a => .{ .op = OpFast.OpAsl, .addressing = Addressing.Accumulator, .cycles = 2 },
+        0x06 => .{ .op = OpFast.OpAsl, .addressing = Addressing.ZeroPage, .cycles = 5 },
+        0x16 => .{ .op = OpFast.OpAsl, .addressing = Addressing.ZeroPageX, .cycles = 6 },
+        0x0e => .{ .op = OpFast.OpAsl, .addressing = Addressing.Absolute, .cycles = 6 },
+        0x1e => .{ .op = OpFast.OpAsl, .addressing = Addressing.AbsoluteX, .cycles = 7 },
 
-        0x10 => return .{ .op = OpFast.OpBpl, .addressing = Addressing.Relative },
-        0x30 => return .{ .op = OpFast.OpBmi, .addressing = Addressing.Relative },
-        0x50 => return .{ .op = OpFast.OpBvc, .addressing = Addressing.Relative },
-        0x70 => return .{ .op = OpFast.OpBvs, .addressing = Addressing.Relative },
-        0x90 => return .{ .op = OpFast.OpBcc, .addressing = Addressing.Relative },
-        0xb0 => return .{ .op = OpFast.OpBcs, .addressing = Addressing.Relative },
-        0xd0 => return .{ .op = OpFast.OpBne, .addressing = Addressing.Relative },
-        0xf0 => return .{ .op = OpFast.OpBeq, .addressing = Addressing.Relative },
+        0x10 => .{ .op = OpFast.OpBpl, .addressing = Addressing.Relative, .cycles = 2 },
+        0x30 => .{ .op = OpFast.OpBmi, .addressing = Addressing.Relative, .cycles = 2 },
+        0x50 => .{ .op = OpFast.OpBvc, .addressing = Addressing.Relative, .cycles = 2 },
+        0x70 => .{ .op = OpFast.OpBvs, .addressing = Addressing.Relative, .cycles = 2 },
+        0x90 => .{ .op = OpFast.OpBcc, .addressing = Addressing.Relative, .cycles = 2 },
+        0xb0 => .{ .op = OpFast.OpBcs, .addressing = Addressing.Relative, .cycles = 2 },
+        0xd0 => .{ .op = OpFast.OpBne, .addressing = Addressing.Relative, .cycles = 2 },
+        0xf0 => .{ .op = OpFast.OpBeq, .addressing = Addressing.Relative, .cycles = 2 },
 
-        0x24 => return .{ .op = OpFast.OpBit, .addressing = Addressing.ZeroPage },
-        0x2c => return .{ .op = OpFast.OpBit, .addressing = Addressing.Absolute },
+        0x24 => .{ .op = OpFast.OpBit, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0x2c => .{ .op = OpFast.OpBit, .addressing = Addressing.Absolute, .cycles = 4 },
 
-        0x00 => return .{ .op = OpFast.OpBrk, .addressing = Addressing.Implied },
+        0x00 => .{ .op = OpFast.OpBrk, .addressing = Addressing.Implied, .cycles = 7 },
 
-        0x18 => return .{ .op = OpFast.OpClc, .addressing = Addressing.Implied },
-        0xd8 => return .{ .op = OpFast.OpCld, .addressing = Addressing.Implied },
-        0x58 => return .{ .op = OpFast.OpCli, .addressing = Addressing.Implied },
-        0xb8 => return .{ .op = OpFast.OpClv, .addressing = Addressing.Implied },
+        0x18 => .{ .op = OpFast.OpClc, .addressing = Addressing.Implied, .cycles = 2 },
+        0xd8 => .{ .op = OpFast.OpCld, .addressing = Addressing.Implied, .cycles = 2 },
+        0x58 => .{ .op = OpFast.OpCli, .addressing = Addressing.Implied, .cycles = 2 },
+        0xb8 => .{ .op = OpFast.OpClv, .addressing = Addressing.Implied, .cycles = 2 },
 
-        0xc9 => return .{ .op = OpFast.OpCmp, .addressing = Addressing.Immediate },
-        0xc5 => return .{ .op = OpFast.OpCmp, .addressing = Addressing.ZeroPage },
-        0xd5 => return .{ .op = OpFast.OpCmp, .addressing = Addressing.ZeroPageX },
-        0xcd => return .{ .op = OpFast.OpCmp, .addressing = Addressing.Absolute },
-        0xdd => return .{ .op = OpFast.OpCmp, .addressing = Addressing.AbsoluteX },
-        0xd9 => return .{ .op = OpFast.OpCmp, .addressing = Addressing.AbsoluteY },
-        0xc1 => return .{ .op = OpFast.OpCmp, .addressing = Addressing.IndirectX },
-        0xd1 => return .{ .op = OpFast.OpCmp, .addressing = Addressing.IndirectY },
+        0xc9 => .{ .op = OpFast.OpCmp, .addressing = Addressing.Immediate, .cycles = 2 },
+        0xc5 => .{ .op = OpFast.OpCmp, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0xd5 => .{ .op = OpFast.OpCmp, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0xcd => .{ .op = OpFast.OpCmp, .addressing = Addressing.Absolute, .cycles = 4 },
+        0xdd => .{ .op = OpFast.OpCmp, .addressing = Addressing.AbsoluteX, .cycles = 4, .var_cycles = true },
+        0xd9 => .{ .op = OpFast.OpCmp, .addressing = Addressing.AbsoluteY, .cycles = 4, .var_cycles = true },
+        0xc1 => .{ .op = OpFast.OpCmp, .addressing = Addressing.IndirectX, .cycles = 6 },
+        0xd1 => .{ .op = OpFast.OpCmp, .addressing = Addressing.IndirectY, .cycles = 5, .var_cycles = true },
 
-        0xe0 => return .{ .op = OpFast.OpCpx, .addressing = Addressing.Immediate },
-        0xe4 => return .{ .op = OpFast.OpCpx, .addressing = Addressing.ZeroPage },
-        0xec => return .{ .op = OpFast.OpCpx, .addressing = Addressing.Absolute },
+        0xe0 => .{ .op = OpFast.OpCpx, .addressing = Addressing.Immediate, .cycles = 2 },
+        0xe4 => .{ .op = OpFast.OpCpx, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0xec => .{ .op = OpFast.OpCpx, .addressing = Addressing.Absolute, .cycles = 4 },
 
-        0xc0 => return .{ .op = OpFast.OpCpy, .addressing = Addressing.Immediate },
-        0xc4 => return .{ .op = OpFast.OpCpy, .addressing = Addressing.ZeroPage },
-        0xcc => return .{ .op = OpFast.OpCpy, .addressing = Addressing.Absolute },
+        0xc0 => .{ .op = OpFast.OpCpy, .addressing = Addressing.Immediate, .cycles = 2 },
+        0xc4 => .{ .op = OpFast.OpCpy, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0xcc => .{ .op = OpFast.OpCpy, .addressing = Addressing.Absolute, .cycles = 4 },
 
-        0xc6 => return .{ .op = OpFast.OpDec, .addressing = Addressing.ZeroPage },
-        0xd6 => return .{ .op = OpFast.OpDec, .addressing = Addressing.ZeroPageX },
-        0xce => return .{ .op = OpFast.OpDec, .addressing = Addressing.Absolute },
-        0xde => return .{ .op = OpFast.OpDec, .addressing = Addressing.AbsoluteX },
+        0xc6 => .{ .op = OpFast.OpDec, .addressing = Addressing.ZeroPage, .cycles = 5 },
+        0xd6 => .{ .op = OpFast.OpDec, .addressing = Addressing.ZeroPageX, .cycles = 6 },
+        0xce => .{ .op = OpFast.OpDec, .addressing = Addressing.Absolute, .cycles = 6 },
+        0xde => .{ .op = OpFast.OpDec, .addressing = Addressing.AbsoluteX, .cycles = 7 },
 
-        0xca => return .{ .op = OpFast.OpDex, .addressing = Addressing.Implied },
-        0x88 => return .{ .op = OpFast.OpDey, .addressing = Addressing.Implied },
+        0xca => .{ .op = OpFast.OpDex, .addressing = Addressing.Implied, .cycles = 2 },
+        0x88 => .{ .op = OpFast.OpDey, .addressing = Addressing.Implied, .cycles = 2 },
 
-        0x49 => return .{ .op = OpFast.OpEor, .addressing = Addressing.Immediate },
-        0x45 => return .{ .op = OpFast.OpEor, .addressing = Addressing.ZeroPage },
-        0x55 => return .{ .op = OpFast.OpEor, .addressing = Addressing.ZeroPageX },
-        0x4d => return .{ .op = OpFast.OpEor, .addressing = Addressing.Absolute },
-        0x5d => return .{ .op = OpFast.OpEor, .addressing = Addressing.AbsoluteX },
-        0x59 => return .{ .op = OpFast.OpEor, .addressing = Addressing.AbsoluteY },
-        0x41 => return .{ .op = OpFast.OpEor, .addressing = Addressing.IndirectX },
-        0x51 => return .{ .op = OpFast.OpEor, .addressing = Addressing.IndirectY },
+        0x49 => .{ .op = OpFast.OpEor, .addressing = Addressing.Immediate, .cycles = 2 },
+        0x45 => .{ .op = OpFast.OpEor, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0x55 => .{ .op = OpFast.OpEor, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0x4d => .{ .op = OpFast.OpEor, .addressing = Addressing.Absolute, .cycles = 4 },
+        0x5d => .{ .op = OpFast.OpEor, .addressing = Addressing.AbsoluteX, .cycles = 4, .var_cycles = true },
+        0x59 => .{ .op = OpFast.OpEor, .addressing = Addressing.AbsoluteY, .cycles = 4, .var_cycles = true },
+        0x41 => .{ .op = OpFast.OpEor, .addressing = Addressing.IndirectX, .cycles = 6 },
+        0x51 => .{ .op = OpFast.OpEor, .addressing = Addressing.IndirectY, .cycles = 5, .var_cycles = true },
 
-        0xe6 => return .{ .op = OpFast.OpInc, .addressing = Addressing.ZeroPage },
-        0xf6 => return .{ .op = OpFast.OpInc, .addressing = Addressing.ZeroPageX },
-        0xee => return .{ .op = OpFast.OpInc, .addressing = Addressing.Absolute },
-        0xfe => return .{ .op = OpFast.OpInc, .addressing = Addressing.AbsoluteX },
+        0xe6 => .{ .op = OpFast.OpInc, .addressing = Addressing.ZeroPage, .cycles = 5 },
+        0xf6 => .{ .op = OpFast.OpInc, .addressing = Addressing.ZeroPageX, .cycles = 6 },
+        0xee => .{ .op = OpFast.OpInc, .addressing = Addressing.Absolute, .cycles = 6 },
+        0xfe => .{ .op = OpFast.OpInc, .addressing = Addressing.AbsoluteX, .cycles = 7 },
 
-        0xe8 => return .{ .op = OpFast.OpInx, .addressing = Addressing.Implied },
-        0xc8 => return .{ .op = OpFast.OpIny, .addressing = Addressing.Implied },
+        0xe8 => .{ .op = OpFast.OpInx, .addressing = Addressing.Implied, .cycles = 2 },
+        0xc8 => .{ .op = OpFast.OpIny, .addressing = Addressing.Implied, .cycles = 2 },
 
-        0x4c => return .{ .op = OpFast.OpJmp, .addressing = Addressing.Absolute },
-        0x6c => return .{ .op = OpFast.OpJmp, .addressing = Addressing.Indirect },
+        0x4c => .{ .op = OpFast.OpJmp, .addressing = Addressing.Absolute, .cycles = 3 },
+        0x6c => .{ .op = OpFast.OpJmp, .addressing = Addressing.Indirect, .cycles = 5 },
 
-        0x20 => return .{ .op = OpFast.OpJsr, .addressing = Addressing.Absolute },
+        0x20 => .{ .op = OpFast.OpJsr, .addressing = Addressing.Absolute, .cycles = 6 },
 
-        0xa9 => return .{ .op = OpFast.OpLda, .addressing = Addressing.Immediate },
-        0xa5 => return .{ .op = OpFast.OpLda, .addressing = Addressing.ZeroPage },
-        0xb5 => return .{ .op = OpFast.OpLda, .addressing = Addressing.ZeroPageX },
-        0xad => return .{ .op = OpFast.OpLda, .addressing = Addressing.Absolute },
-        0xbd => return .{ .op = OpFast.OpLda, .addressing = Addressing.AbsoluteX },
-        0xb9 => return .{ .op = OpFast.OpLda, .addressing = Addressing.AbsoluteY },
-        0xa1 => return .{ .op = OpFast.OpLda, .addressing = Addressing.IndirectX },
-        0xb1 => return .{ .op = OpFast.OpLda, .addressing = Addressing.IndirectY },
+        0xa9 => .{ .op = OpFast.OpLda, .addressing = Addressing.Immediate, .cycles = 2 },
+        0xa5 => .{ .op = OpFast.OpLda, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0xb5 => .{ .op = OpFast.OpLda, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0xad => .{ .op = OpFast.OpLda, .addressing = Addressing.Absolute, .cycles = 4 },
+        0xbd => .{ .op = OpFast.OpLda, .addressing = Addressing.AbsoluteX, .cycles = 4, .var_cycles = true },
+        0xb9 => .{ .op = OpFast.OpLda, .addressing = Addressing.AbsoluteY, .cycles = 4, .var_cycles = true },
+        0xa1 => .{ .op = OpFast.OpLda, .addressing = Addressing.IndirectX, .cycles = 6 },
+        0xb1 => .{ .op = OpFast.OpLda, .addressing = Addressing.IndirectY, .cycles = 5, .var_cycles = true },
 
-        0xa2 => return .{ .op = OpFast.OpLdx, .addressing = Addressing.Immediate },
-        0xa6 => return .{ .op = OpFast.OpLdx, .addressing = Addressing.ZeroPage },
-        0xb6 => return .{ .op = OpFast.OpLdx, .addressing = Addressing.ZeroPageY },
-        0xae => return .{ .op = OpFast.OpLdx, .addressing = Addressing.Absolute },
-        0xbe => return .{ .op = OpFast.OpLdx, .addressing = Addressing.AbsoluteY },
+        0xa2 => .{ .op = OpFast.OpLdx, .addressing = Addressing.Immediate, .cycles = 2 },
+        0xa6 => .{ .op = OpFast.OpLdx, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0xb6 => .{ .op = OpFast.OpLdx, .addressing = Addressing.ZeroPageY, .cycles = 4 },
+        0xae => .{ .op = OpFast.OpLdx, .addressing = Addressing.Absolute, .cycles = 4 },
+        0xbe => .{ .op = OpFast.OpLdx, .addressing = Addressing.AbsoluteY, .cycles = 4, .var_cycles = true },
 
-        0xa0 => return .{ .op = OpFast.OpLdy, .addressing = Addressing.Immediate },
-        0xa4 => return .{ .op = OpFast.OpLdy, .addressing = Addressing.ZeroPage },
-        0xb4 => return .{ .op = OpFast.OpLdy, .addressing = Addressing.ZeroPageX },
-        0xac => return .{ .op = OpFast.OpLdy, .addressing = Addressing.Absolute },
-        0xbc => return .{ .op = OpFast.OpLdy, .addressing = Addressing.AbsoluteX },
+        0xa0 => .{ .op = OpFast.OpLdy, .addressing = Addressing.Immediate, .cycles = 2 },
+        0xa4 => .{ .op = OpFast.OpLdy, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0xb4 => .{ .op = OpFast.OpLdy, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0xac => .{ .op = OpFast.OpLdy, .addressing = Addressing.Absolute, .cycles = 4 },
+        0xbc => .{ .op = OpFast.OpLdy, .addressing = Addressing.AbsoluteX, .cycles = 4, .var_cycles = true },
 
-        0x4a => return .{ .op = OpFast.OpLsr, .addressing = Addressing.Accumulator },
-        0x46 => return .{ .op = OpFast.OpLsr, .addressing = Addressing.ZeroPage },
-        0x56 => return .{ .op = OpFast.OpLsr, .addressing = Addressing.ZeroPageX },
-        0x4e => return .{ .op = OpFast.OpLsr, .addressing = Addressing.Absolute },
-        0x5e => return .{ .op = OpFast.OpLsr, .addressing = Addressing.AbsoluteX },
+        0x4a => .{ .op = OpFast.OpLsr, .addressing = Addressing.Accumulator, .cycles = 2 },
+        0x46 => .{ .op = OpFast.OpLsr, .addressing = Addressing.ZeroPage, .cycles = 5 },
+        0x56 => .{ .op = OpFast.OpLsr, .addressing = Addressing.ZeroPageX, .cycles = 6 },
+        0x4e => .{ .op = OpFast.OpLsr, .addressing = Addressing.Absolute, .cycles = 6 },
+        0x5e => .{ .op = OpFast.OpLsr, .addressing = Addressing.AbsoluteX, .cycles = 7 },
 
-        0xea => return .{ .op = OpFast.OpNop, .addressing = Addressing.Implied },
+        0xea => .{ .op = OpFast.OpNop, .addressing = Addressing.Implied, .cycles = 2 },
 
-        0x09 => return .{ .op = OpFast.OpOra, .addressing = Addressing.Immediate },
-        0x05 => return .{ .op = OpFast.OpOra, .addressing = Addressing.ZeroPage },
-        0x15 => return .{ .op = OpFast.OpOra, .addressing = Addressing.ZeroPageX },
-        0x0d => return .{ .op = OpFast.OpOra, .addressing = Addressing.Absolute },
-        0x1d => return .{ .op = OpFast.OpOra, .addressing = Addressing.AbsoluteX },
-        0x19 => return .{ .op = OpFast.OpOra, .addressing = Addressing.AbsoluteY },
-        0x01 => return .{ .op = OpFast.OpOra, .addressing = Addressing.IndirectX },
-        0x11 => return .{ .op = OpFast.OpOra, .addressing = Addressing.IndirectY },
+        0x09 => .{ .op = OpFast.OpOra, .addressing = Addressing.Immediate, .cycles = 2 },
+        0x05 => .{ .op = OpFast.OpOra, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0x15 => .{ .op = OpFast.OpOra, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0x0d => .{ .op = OpFast.OpOra, .addressing = Addressing.Absolute, .cycles = 4 },
+        0x1d => .{ .op = OpFast.OpOra, .addressing = Addressing.AbsoluteX, .cycles = 4, .var_cycles = true },
+        0x19 => .{ .op = OpFast.OpOra, .addressing = Addressing.AbsoluteY, .cycles = 4, .var_cycles = true },
+        0x01 => .{ .op = OpFast.OpOra, .addressing = Addressing.IndirectX, .cycles = 6 },
+        0x11 => .{ .op = OpFast.OpOra, .addressing = Addressing.IndirectY, .cycles = 5, .var_cycles = true },
 
-        0x48 => return .{ .op = OpFast.OpPha, .addressing = Addressing.Implied },
-        0x08 => return .{ .op = OpFast.OpPhp, .addressing = Addressing.Implied },
-        0x68 => return .{ .op = OpFast.OpPla, .addressing = Addressing.Implied },
-        0x28 => return .{ .op = OpFast.OpPlp, .addressing = Addressing.Implied },
+        0x48 => .{ .op = OpFast.OpPha, .addressing = Addressing.Implied, .cycles = 3 },
+        0x08 => .{ .op = OpFast.OpPhp, .addressing = Addressing.Implied, .cycles = 3 },
+        0x68 => .{ .op = OpFast.OpPla, .addressing = Addressing.Implied, .cycles = 4 },
+        0x28 => .{ .op = OpFast.OpPlp, .addressing = Addressing.Implied, .cycles = 4 },
 
-        0x2a => return .{ .op = OpFast.OpRol, .addressing = Addressing.Accumulator },
-        0x26 => return .{ .op = OpFast.OpRol, .addressing = Addressing.ZeroPage },
-        0x36 => return .{ .op = OpFast.OpRol, .addressing = Addressing.ZeroPageX },
-        0x2e => return .{ .op = OpFast.OpRol, .addressing = Addressing.Absolute },
-        0x3e => return .{ .op = OpFast.OpRol, .addressing = Addressing.AbsoluteX },
+        0x2a => .{ .op = OpFast.OpRol, .addressing = Addressing.Accumulator, .cycles = 2 },
+        0x26 => .{ .op = OpFast.OpRol, .addressing = Addressing.ZeroPage, .cycles = 5 },
+        0x36 => .{ .op = OpFast.OpRol, .addressing = Addressing.ZeroPageX, .cycles = 6 },
+        0x2e => .{ .op = OpFast.OpRol, .addressing = Addressing.Absolute, .cycles = 6 },
+        0x3e => .{ .op = OpFast.OpRol, .addressing = Addressing.AbsoluteX, .cycles = 7 },
 
-        0x6a => return .{ .op = OpFast.OpRor, .addressing = Addressing.Accumulator },
-        0x66 => return .{ .op = OpFast.OpRor, .addressing = Addressing.ZeroPage },
-        0x76 => return .{ .op = OpFast.OpRor, .addressing = Addressing.ZeroPageX },
-        0x6e => return .{ .op = OpFast.OpRor, .addressing = Addressing.Absolute },
-        0x7e => return .{ .op = OpFast.OpRor, .addressing = Addressing.AbsoluteX },
+        0x6a => .{ .op = OpFast.OpRor, .addressing = Addressing.Accumulator, .cycles = 2 },
+        0x66 => .{ .op = OpFast.OpRor, .addressing = Addressing.ZeroPage, .cycles = 5 },
+        0x76 => .{ .op = OpFast.OpRor, .addressing = Addressing.ZeroPageX, .cycles = 6 },
+        0x6e => .{ .op = OpFast.OpRor, .addressing = Addressing.Absolute, .cycles = 6 },
+        0x7e => .{ .op = OpFast.OpRor, .addressing = Addressing.AbsoluteX, .cycles = 7 },
 
-        0x40 => return .{ .op = OpFast.OpRti, .addressing = Addressing.Implied },
-        0x60 => return .{ .op = OpFast.OpRts, .addressing = Addressing.Implied },
+        0x40 => .{ .op = OpFast.OpRti, .addressing = Addressing.Implied, .cycles = 6 },
+        0x60 => .{ .op = OpFast.OpRts, .addressing = Addressing.Implied, .cycles = 6 },
 
-        0xe9 => return .{ .op = OpFast.OpSbc, .addressing = Addressing.Immediate },
-        0xe5 => return .{ .op = OpFast.OpSbc, .addressing = Addressing.ZeroPage },
-        0xf5 => return .{ .op = OpFast.OpSbc, .addressing = Addressing.ZeroPageX },
-        0xed => return .{ .op = OpFast.OpSbc, .addressing = Addressing.Absolute },
-        0xfd => return .{ .op = OpFast.OpSbc, .addressing = Addressing.AbsoluteX },
-        0xf9 => return .{ .op = OpFast.OpSbc, .addressing = Addressing.AbsoluteY },
-        0xe1 => return .{ .op = OpFast.OpSbc, .addressing = Addressing.IndirectX },
-        0xf1 => return .{ .op = OpFast.OpSbc, .addressing = Addressing.IndirectY },
+        0xe9 => .{ .op = OpFast.OpSbc, .addressing = Addressing.Immediate, .cycles = 2 },
+        0xe5 => .{ .op = OpFast.OpSbc, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0xf5 => .{ .op = OpFast.OpSbc, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0xed => .{ .op = OpFast.OpSbc, .addressing = Addressing.Absolute, .cycles = 4 },
+        0xfd => .{ .op = OpFast.OpSbc, .addressing = Addressing.AbsoluteX, .cycles = 4, .var_cycles = true },
+        0xf9 => .{ .op = OpFast.OpSbc, .addressing = Addressing.AbsoluteY, .cycles = 4, .var_cycles = true },
+        0xe1 => .{ .op = OpFast.OpSbc, .addressing = Addressing.IndirectX, .cycles = 6 },
+        0xf1 => .{ .op = OpFast.OpSbc, .addressing = Addressing.IndirectY, .cycles = 5, .var_cycles = true },
 
-        0x38 => return .{ .op = OpFast.OpSec, .addressing = Addressing.Implied },
-        0xf8 => return .{ .op = OpFast.OpSed, .addressing = Addressing.Implied },
-        0x78 => return .{ .op = OpFast.OpSei, .addressing = Addressing.Implied },
+        0x38 => .{ .op = OpFast.OpSec, .addressing = Addressing.Implied, .cycles = 2 },
+        0xf8 => .{ .op = OpFast.OpSed, .addressing = Addressing.Implied, .cycles = 2 },
+        0x78 => .{ .op = OpFast.OpSei, .addressing = Addressing.Implied, .cycles = 2 },
 
-        0x85 => return .{ .op = OpFast.OpSta, .addressing = Addressing.ZeroPage },
-        0x95 => return .{ .op = OpFast.OpSta, .addressing = Addressing.ZeroPageX },
-        0x8d => return .{ .op = OpFast.OpSta, .addressing = Addressing.Absolute },
-        0x9d => return .{ .op = OpFast.OpSta, .addressing = Addressing.AbsoluteX },
-        0x99 => return .{ .op = OpFast.OpSta, .addressing = Addressing.AbsoluteY },
-        0x81 => return .{ .op = OpFast.OpSta, .addressing = Addressing.IndirectX },
-        0x91 => return .{ .op = OpFast.OpSta, .addressing = Addressing.IndirectY },
+        0x85 => .{ .op = OpFast.OpSta, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0x95 => .{ .op = OpFast.OpSta, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0x8d => .{ .op = OpFast.OpSta, .addressing = Addressing.Absolute, .cycles = 4 },
+        0x9d => .{ .op = OpFast.OpSta, .addressing = Addressing.AbsoluteX, .cycles = 5 },
+        0x99 => .{ .op = OpFast.OpSta, .addressing = Addressing.AbsoluteY, .cycles = 5 },
+        0x81 => .{ .op = OpFast.OpSta, .addressing = Addressing.IndirectX, .cycles = 6 },
+        0x91 => .{ .op = OpFast.OpSta, .addressing = Addressing.IndirectY, .cycles = 6 },
 
-        0x86 => return .{ .op = OpFast.OpStx, .addressing = Addressing.ZeroPage },
-        0x96 => return .{ .op = OpFast.OpStx, .addressing = Addressing.ZeroPageY },
-        0x8e => return .{ .op = OpFast.OpStx, .addressing = Addressing.Absolute },
+        0x86 => .{ .op = OpFast.OpStx, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0x96 => .{ .op = OpFast.OpStx, .addressing = Addressing.ZeroPageY, .cycles = 4 },
+        0x8e => .{ .op = OpFast.OpStx, .addressing = Addressing.Absolute, .cycles = 4 },
 
-        0x84 => return .{ .op = OpFast.OpSty, .addressing = Addressing.ZeroPage },
-        0x94 => return .{ .op = OpFast.OpSty, .addressing = Addressing.ZeroPageX },
-        0x8c => return .{ .op = OpFast.OpSty, .addressing = Addressing.Absolute },
+        0x84 => .{ .op = OpFast.OpSty, .addressing = Addressing.ZeroPage, .cycles = 3 },
+        0x94 => .{ .op = OpFast.OpSty, .addressing = Addressing.ZeroPageX, .cycles = 4 },
+        0x8c => .{ .op = OpFast.OpSty, .addressing = Addressing.Absolute, .cycles = 4 },
 
-        0xaa => return .{ .op = OpFast.OpTax, .addressing = Addressing.Implied },
-        0xa8 => return .{ .op = OpFast.OpTay, .addressing = Addressing.Implied },
-        0xba => return .{ .op = OpFast.OpTsx, .addressing = Addressing.Implied },
-        0x8a => return .{ .op = OpFast.OpTxa, .addressing = Addressing.Implied },
-        0x9a => return .{ .op = OpFast.OpTxs, .addressing = Addressing.Implied },
-        0x98 => return .{ .op = OpFast.OpTya, .addressing = Addressing.Implied },
+        0xaa => .{ .op = OpFast.OpTax, .addressing = Addressing.Implied, .cycles = 2 },
+        0xa8 => .{ .op = OpFast.OpTay, .addressing = Addressing.Implied, .cycles = 2 },
+        0xba => .{ .op = OpFast.OpTsx, .addressing = Addressing.Implied, .cycles = 2 },
+        0x8a => .{ .op = OpFast.OpTxa, .addressing = Addressing.Implied, .cycles = 2 },
+        0x9a => .{ .op = OpFast.OpTxs, .addressing = Addressing.Implied, .cycles = 2 },
+        0x98 => .{ .op = OpFast.OpTya, .addressing = Addressing.Implied, .cycles = 2 },
 
-        else => @panic("Not implemented"),
-    }
+        else => .{ .op = OpFast.OpIll, .addressing = Addressing.Implied, .cycles = 0 },
+    };
 }
 
 // TODO: finish later

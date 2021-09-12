@@ -1,19 +1,25 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Instruction_ = @import("instruction.zig");
-const Precision = Instruction_.Precision;
-const Op = Instruction_.Op;
-const Addressing = Instruction_.Addressing;
-const Instruction = Instruction_.Instruction;
+const instruction_ = @import("instruction.zig");
+const Precision = instruction_.Precision;
+const Op = instruction_.Op;
+const Addressing = instruction_.Addressing;
+const Instruction = instruction_.Instruction;
 
-const Ines = @import("ines.zig");
-const Cart_ = @import("cart.zig");
-const Cart = Cart_.Cart;
+const Cart = @import("cart.zig").Cart;
+const Ppu = @import("ppu.zig").Ppu;
+const Controller = @import("controller.zig").Controller;
+
+const flags_ = @import("flags.zig");
+const CreateFlags = flags_.CreateFlags;
+const FieldFlagsDef = flags_.FieldFlagsDef;
 
 pub const Cpu = struct {
     reg: Registers,
     mem: Memory,
+    ppu: *Ppu,
+    cycles: usize = 0,
 
     pub const Registers = struct {
         pc: u16,
@@ -23,6 +29,10 @@ pub const Cpu = struct {
         x: u8,
         y: u8,
         p: u8,
+
+        const ff_masks = CreateFlags(Registers, ([_]FieldFlagsDef{
+            .{ .field = "p", .flags = "NV??DIZC" },
+        })[0..]){};
 
         /// Convenient for testing
         pub fn zeroes() Registers {
@@ -42,46 +52,20 @@ pub const Cpu = struct {
             };
         }
 
-        pub fn hasFlags(comptime flags: []const u8) bool {
-            for (flags) |c| {
-                if (std.mem.indexOfScalar(u8, "NVDIZC", c) == null) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        pub fn getFlagMask(comptime flags: []const u8) u8 {
-            var mask: u8 = 0;
-            for (flags) |c| {
-                switch (c) {
-                    'C' => mask |= 0b0000_0001,
-                    'Z' => mask |= 0b0000_0010,
-                    'I' => mask |= 0b0000_0100,
-                    'D' => mask |= 0b0000_1000,
-                    'V' => mask |= 0b0100_0000,
-                    'N' => mask |= 0b1000_0000,
-                    else => @compileError("Unknown flag name"),
-                }
-            }
-            return mask;
-        }
-
-        pub fn getFlag(self: Registers, comptime flag: []const u8) bool {
-            return (self.p & comptime Registers.getFlagMask(flag)) != 0;
-        }
-
-        pub fn setFlag(self: *Registers, comptime flag: []const u8, val: bool) void {
-            self.setFlags(flag, if (val) @as(u8, 0xff) else 0);
+        pub fn getFlag(self: Registers, comptime flags: []const u8) bool {
+            return ff_masks.getFlag(self, .{ .flags = flags });
         }
 
         pub fn getFlags(self: Registers, comptime flags: []const u8) u8 {
-            return self.p & comptime Registers.getFlagMask(flags);
+            return ff_masks.getFlags(self, .{ .flags = flags });
+        }
+
+        pub fn setFlag(self: *Registers, comptime flags: []const u8, val: bool) void {
+            return ff_masks.setFlag(self, .{ .flags = flags }, val);
         }
 
         pub fn setFlags(self: *Registers, comptime flags: []const u8, val: u8) void {
-            const mask = comptime Registers.getFlagMask(flags);
-            self.p = (self.p & ~mask) | (val & mask);
+            return ff_masks.setFlags(self, .{ .flags = flags }, val);
         }
 
         pub fn setFlagsNZ(self: *Registers, val: u8) void {
@@ -119,40 +103,38 @@ pub const Cpu = struct {
     };
 
     pub const Memory = struct {
-        // incomplete
-        cart: Cart,
+        cart: *Cart,
+        ppu: *Ppu,
+        controller: *Controller,
         ram: [0x800]u8,
-        ppu_regs: [0x8]u8,
 
         // TODO: implement non-zero pattern?
-        pub fn zeroes() Memory {
+        pub fn zeroes(cart: *Cart, ppu: *Ppu, controller: *Controller) Memory {
             return Memory{
-                .cart = Cart.init(),
+                .cart = cart,
+                .ppu = ppu,
+                .controller = controller,
                 .ram = [_]u8{0} ** 0x800,
-                .ppu_regs = [_]u8{0} ** 0x8,
             };
         }
 
-        pub fn getPtr(self: *Memory, addr: u16) ?*u8 {
+        pub fn peek(self: Memory, addr: u16) u8 {
             switch (addr) {
-                0x0000...0x1fff => return &self.ram[addr & 0x7ff],
-                0x2000...0x3fff => return &self.ppu_regs[addr & 0x7],
-                else => {
-                    std.log.err("Unimplemented write memory address ({x:0>4})", .{addr});
-                    return null;
-                },
+                0x0000...0x1fff => return self.ram[addr & 0x7ff],
+                0x2000...0x3fff => return self.ppu.reg.peek(@intCast(u3, addr & 0x7)),
+                0x8000...0xffff => return self.cart.peekPrg(addr & 0x7fff),
+                else => return 0,
             }
         }
-
-        pub const peek = read;
 
         pub fn read(self: Memory, addr: u16) u8 {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                0x2000...0x3fff => return self.ppu_regs[addr & 0x7],
-                0x8000...0xffff => return self.cart.read(addr & 0x7fff),
+                0x2000...0x3fff => return self.ppu.reg.read(@intCast(u3, addr & 0x7)),
+                0x8000...0xffff => return self.cart.readPrg(addr & 0x7fff),
+                0x4016 => return self.controller.getNextButton(),
                 else => {
-                    std.log.err("Unimplemented read memory address ({x:0>4})", .{addr});
+                    //std.log.err("Unimplemented read memory address ({x:0>4})", .{addr});
                     return 0;
                 },
             }
@@ -164,45 +146,70 @@ pub const Cpu = struct {
         }
 
         pub fn write(self: *Memory, addr: u16, val: u8) void {
-            if (self.getPtr(addr)) |byte| {
-                byte.* = val;
+            switch (addr) {
+                0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
+                0x2000...0x3fff => self.ppu.reg.write(@intCast(u3, addr & 7), val),
+                0x4014 => @fieldParentPtr(Cpu, "mem", self).dma(val),
+                0x4016 => if (val & 1 == 1) {
+                    self.controller.strobe();
+                },
+                else => {
+                    //std.log.err("Unimplemented write memory address ({x:0>4})", .{addr});
+                },
             }
         }
     };
 
-    pub fn init() Cpu {
+    pub fn init(cart: *Cart, ppu: *Ppu, controller: *Controller) Cpu {
         return Cpu{
             .reg = Registers.startup(),
-            .mem = Memory.zeroes(),
+            .mem = Memory.zeroes(cart, ppu, controller),
+            .ppu = ppu,
         };
     }
 
-    pub fn deinit(self: Cpu, allocator: *Allocator) void {
-        self.mem.cart.deinit(allocator);
+    pub fn deinit(self: Cpu) void {
+        _ = self;
     }
 
-    pub fn loadRom(self: *Cpu, allocator: *Allocator, info: *Ines.RomInfo) void {
-        std.log.debug("Loading rom", .{});
-        self.mem.cart.loadRom(allocator, info);
-        //self.reg.pc = self.mem.readWord(0xfffc);
-        self.reg.pc = 0xc000;
+    pub fn reset(self: *Cpu) void {
+        self.reg.pc = self.mem.readWord(0xfffc);
+        //self.reg.pc = 0xc000;
         std.log.debug("PC set to {x:0>4}", .{self.reg.pc});
     }
 
+    pub fn nmi(self: *Cpu) void {
+        self.pushStack(@intCast(u8, self.reg.pc >> 8));
+        self.pushStack(@intCast(u8, self.reg.pc & 0xff));
+        self.pushStack(self.reg.p | 0b0010_0000);
+        self.reg.setFlag("I", true);
+        self.reg.pc = self.mem.readWord(0xfffa);
+    }
+
+    pub fn dma(self: *Cpu, addr_high: u8) void {
+        var i: usize = 0;
+        while (i < 256) : (i += 1) {
+            self.ppu.mem.oam[i] = self.mem.read((@as(u16, addr_high) << 8) | @intCast(u8, i));
+            self.ppu.runCycle();
+            self.ppu.runCycle();
+        }
+    }
+
     pub fn pushStack(self: *Cpu, val: u8) void {
-        self.reg.s -%= 1;
         self.mem.write(@as(u9, self.reg.s) | 0x100, val);
+        self.reg.s -%= 1;
     }
 
     pub fn popStack(self: *Cpu) u8 {
-        const ret = self.mem.read(@as(u9, self.reg.s) | 0x100);
         self.reg.s +%= 1;
-        return ret;
+        return self.mem.read(@as(u9, self.reg.s) | 0x100);
     }
 
     pub fn branchRelative(self: *Cpu, condition: bool, jump: u8) void {
         if (condition) {
+            const prev_pc = self.reg.pc;
             self.reg.pc = @bitCast(u16, @bitCast(i16, self.reg.pc) +% @bitCast(i8, jump));
+            self.cycles += @as(usize, 1) + @boolToInt(self.reg.pc & 0xff00 != prev_pc & 0xff00);
         }
     }
 
@@ -237,8 +244,6 @@ pub const Cpu = struct {
     };
 
     pub fn runInstruction(self: *Cpu, comptime precision: Precision) void {
-        _ = precision;
-
         const opcode = self.mem.read(self.reg.pc);
         const instruction = Instruction(precision).decode(opcode);
 
@@ -250,10 +255,14 @@ pub const Cpu = struct {
                     break :blk ValueReference{ .Memory = self.mem.readWord(self.reg.pc) };
                 },
                 .AbsoluteX => {
-                    break :blk ValueReference{ .Memory = self.mem.readWord(self.reg.pc) +% self.reg.x };
+                    const val = self.mem.readWord(self.reg.pc);
+                    self.cycles += @boolToInt(instruction.var_cycles and (val +% self.reg.x) & 0xff < val & 0xff);
+                    break :blk ValueReference{ .Memory = val +% self.reg.x };
                 },
                 .AbsoluteY => {
-                    break :blk ValueReference{ .Memory = self.mem.readWord(self.reg.pc) +% self.reg.y };
+                    const val = self.mem.readWord(self.reg.pc);
+                    self.cycles += @boolToInt(instruction.var_cycles and (val +% self.reg.y) & 0xff < val & 0xff);
+                    break :blk ValueReference{ .Memory = val +% self.reg.y };
                 },
                 .Immediate => break :blk ValueReference{ .Memory = self.reg.pc },
                 .Implied => break :blk .None,
@@ -277,6 +286,8 @@ pub const Cpu = struct {
 
                     const val_low = self.mem.read(zero_page);
                     const val_high = self.mem.read(zero_page +% 1);
+
+                    self.cycles += @boolToInt(instruction.var_cycles and (val_low +% self.reg.y) < val_low);
                     break :blk ValueReference{ .Memory = ((@as(u16, val_high) << 8) | val_low) +% self.reg.y };
                 },
                 .Relative => break :blk ValueReference{ .Memory = self.reg.pc },
@@ -295,22 +306,24 @@ pub const Cpu = struct {
             }
         };
 
-        self.logInstruction(instruction, value);
+        //self.logInstruction(instruction, value);
 
         switch (instruction.op) {
+            .OpIll => {},
             .OpAdc => {
-                const original: u8 = self.reg.a;
+                const original: u8 = value.read(self);
                 const sum: u9 = @as(u9, self.reg.a) +
-                    @as(u9, value.read(self)) +
+                    @as(u9, original) +
                     @as(u9, self.reg.getFlags("C"));
                 const sum_u8: u8 = @intCast(u8, sum & 0xff);
-                self.reg.a = @intCast(u8, sum_u8);
 
                 const n_flag = sum_u8 & 0x80;
-                const v_flag = ((original & 0x80) ^ (sum_u8 & 0x80)) >> 6;
+                const v_flag = (((self.reg.a ^ sum_u8) & (original ^ sum_u8)) & 0x80) >> 1;
                 const z_flag = @as(u8, @boolToInt(sum_u8 == 0)) << 1;
                 const c_flag = @intCast(u8, (sum & 0x100) >> 8);
                 self.reg.setFlags("NVZC", n_flag | v_flag | z_flag | c_flag);
+
+                self.reg.a = sum_u8;
             },
             .OpAnd => {
                 self.reg.a &= value.read(self);
@@ -333,8 +346,9 @@ pub const Cpu = struct {
             .OpBne => self.branchRelative(!self.reg.getFlag("Z"), value.read(self)),
             .OpBeq => self.branchRelative(self.reg.getFlag("Z"), value.read(self)),
             .OpBit => {
-                const val = self.reg.a & value.read(self);
-                self.reg.setFlags("NV", val);
+                const mem = value.read(self);
+                const val = self.reg.a & mem;
+                self.reg.setFlags("NVZ", (mem & 0xc0) | @as(u8, @boolToInt(val == 0)) << 1);
             },
             .OpBrk => {
                 var push_sp = self.reg.pc +% 1;
@@ -459,18 +473,19 @@ pub const Cpu = struct {
                 self.reg.pc = ((high << 8) | low) +% 1;
             },
             .OpSbc => {
-                const original: u8 = self.reg.a;
+                const original: u8 = value.read(self);
                 const dif: u9 = @as(u9, self.reg.a) -%
-                    @as(u9, value.read(self)) -%
+                    @as(u9, original) -%
                     @as(u9, @boolToInt(!self.reg.getFlag("C")));
                 const dif_u8: u8 = @intCast(u8, dif & 0xff);
-                self.reg.a = @intCast(u8, dif_u8);
 
                 const n_flag = dif_u8 & 0x80;
-                const v_flag = ((original & 0x80) ^ (dif_u8 & 0x80)) >> 6;
+                const v_flag = (((self.reg.a ^ dif_u8) & (~original ^ dif_u8)) & 0x80) >> 1;
                 const z_flag = @as(u8, @boolToInt(dif_u8 == 0)) << 1;
-                const c_flag = @intCast(u8, (dif & 0x100) >> 8);
+                const c_flag = ~@intCast(u1, (dif & 0x100) >> 8);
                 self.reg.setFlags("NVZC", n_flag | v_flag | z_flag | c_flag);
+
+                self.reg.a = dif_u8;
             },
             .OpSec => self.reg.setFlag("C", true),
             .OpSed => self.reg.setFlag("D", true),
@@ -494,10 +509,7 @@ pub const Cpu = struct {
                 self.reg.a = self.reg.x;
                 self.reg.setFlagsNZ(self.reg.a);
             },
-            .OpTxs => {
-                self.reg.s = self.reg.x;
-                self.reg.setFlagsNZ(self.reg.s);
-            },
+            .OpTxs => self.reg.s = self.reg.x,
             .OpTya => {
                 self.reg.a = self.reg.y;
                 self.reg.setFlagsNZ(self.reg.a);
@@ -505,6 +517,12 @@ pub const Cpu = struct {
         }
 
         self.reg.pc +%= instruction.addressing.op_size() - 1;
+        self.cycles += instruction.cycles;
+
+        var i: usize = 0;
+        while (i < @as(usize, instruction.cycles) * 3) : (i += 1) {
+            self.ppu.runCycle();
+        }
     }
 
     fn logInstruction(self: Cpu, instruction: Instruction(.Fast), value: ValueReference) void {
@@ -515,11 +533,12 @@ pub const Cpu = struct {
         const high = self.mem.peek(self.reg.pc +% 1);
         const address = (@as(u16, high) << 8) | low;
 
+        std.debug.print("Cycles: {} ", .{self.cycles});
         std.debug.print("A: {x:0>2} X: {x:0>2} Y: {x:0>2} P: {x:0>2} S: {x:0>2} PC: {x:0>4}\t", .{
             self.reg.a,
             self.reg.x,
             self.reg.y,
-            self.reg.p,
+            self.reg.p | 0x20,
             self.reg.s,
             self.reg.pc -% 1,
         });
@@ -550,16 +569,16 @@ pub const Cpu = struct {
                 std.debug.print("(${x:0>4})  \t; (${0x:0>4}) = ${x:0>4}", .{ address, value.Memory });
             },
             .IndirectX => {
-                std.debug.print("(${x:0>4},x)\t; (${0x:0>4},{x:0>2}) = ${x:0>4} = #${x:0>2}", .{
-                    address,
+                std.debug.print("(${x:0>2},x)\t; (${0x:0>4},{x:0>2}) = ${x:0>4} = #${x:0>2}", .{
+                    low,
                     self.reg.x,
                     value.Memory,
                     value.peek(self),
                 });
             },
             .IndirectY => {
-                std.debug.print("(${x:0>4}),y\t; (${0x:0>4}),{x:0>2} = ${x:0>4} = #${x:0>2}", .{
-                    address,
+                std.debug.print("(${x:0>2}),y\t; (${0x:0>4}),{x:0>2} = ${x:0>4} = #${x:0>2}", .{
+                    low,
                     self.reg.y,
                     value.Memory,
                     value.peek(self),
