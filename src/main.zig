@@ -9,9 +9,14 @@ const Controller = @import("controller.zig").Controller;
 
 const sdl = @import("sdl.zig");
 
+pub const Precision = enum {
+    Fast,
+    Accurate,
+};
+
 const Console = struct {
     cart: Cart,
-    ppu: Ppu,
+    ppu: Ppu(.Accurate),
     cpu: Cpu,
     controller: Controller,
 
@@ -26,7 +31,7 @@ const Console = struct {
 
     pub fn init(self: *Console, frame_buffer: sdl.FrameBuffer) void {
         self.cart = Cart.init();
-        self.ppu = Ppu.init(&self.cart, &self.cpu, frame_buffer);
+        self.ppu = Ppu(.Accurate).init(&self.cart, &self.cpu, frame_buffer);
         self.cpu = Cpu.init(&self.cart, &self.ppu, &self.controller);
         self.controller = Controller{};
     }
@@ -54,9 +59,10 @@ pub fn main() anyerror!void {
     console.init(sdl_context.frame_buffer);
     defer console.deinit(allocator);
 
-    //const rom_name = "roms/no-redist/Mario Bros. (World).nes";
+    //const rom_name = "roms/tests/scanline.nes";
+    const rom_name = "roms/no-redist/Mario Bros. (World).nes";
     //const rom_name = "roms/no-redist/Donkey Kong (JU).nes";
-    const rom_name = "roms/no-redist/Super Mario Bros. (World).nes";
+    //const rom_name = "roms/no-redist/Super Mario Bros. (World).nes";
     var info = try ines.RomInfo.readFile(allocator, rom_name);
     defer info.deinit(allocator);
 
@@ -64,7 +70,8 @@ pub fn main() anyerror!void {
     console.cpu.reset();
 
     var event: sdl.c.SDL_Event = undefined;
-    var then = std.time.timestamp();
+    var then = std.time.nanoTimestamp();
+    var total_time: i128 = 0;
     var frames: usize = 0;
     mloop: while (true) {
         while (sdl.pollEvent(.{&event}) == 1) {
@@ -80,16 +87,19 @@ pub fn main() anyerror!void {
         if (console.ppu.present_frame) {
             frames += 1;
             console.ppu.present_frame = false;
-            const now = std.time.timestamp();
-            if (now > then) {
-                then = now;
-                std.debug.print("FPS: {}\n", .{frames});
-                frames = 0;
-            }
-
             try sdl_context.frame_buffer.present(sdl_context.renderer);
 
-            //std.time.sleep(16666666);
+            var now = std.time.nanoTimestamp();
+            std.time.sleep(@intCast(u64, @maximum(0, (1 * std.time.ns_per_s) / 60 - (now - then))));
+
+            now = std.time.nanoTimestamp();
+            total_time += now - then;
+            then = now;
+            if (total_time > std.time.ns_per_s) {
+                std.debug.print("FPS: {}\n", .{frames});
+                frames = 0;
+                total_time -= std.time.ns_per_s;
+            }
         }
         console.cpu.runInstruction(.Fast);
     }

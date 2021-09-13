@@ -2,11 +2,11 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const instruction_ = @import("instruction.zig");
-const Precision = instruction_.Precision;
 const Op = instruction_.Op;
 const Addressing = instruction_.Addressing;
 const Instruction = instruction_.Instruction;
 
+const Precision = @import("main.zig").Precision;
 const Cart = @import("cart.zig").Cart;
 const Ppu = @import("ppu.zig").Ppu;
 const Controller = @import("controller.zig").Controller;
@@ -18,7 +18,7 @@ const FieldFlagsDef = flags_.FieldFlagsDef;
 pub const Cpu = struct {
     reg: Registers,
     mem: Memory,
-    ppu: *Ppu,
+    ppu: *Ppu(.Accurate),
     cycles: usize = 0,
 
     pub const Registers = struct {
@@ -104,12 +104,12 @@ pub const Cpu = struct {
 
     pub const Memory = struct {
         cart: *Cart,
-        ppu: *Ppu,
+        ppu: *Ppu(.Accurate),
         controller: *Controller,
         ram: [0x800]u8,
 
         // TODO: implement non-zero pattern?
-        pub fn zeroes(cart: *Cart, ppu: *Ppu, controller: *Controller) Memory {
+        pub fn zeroes(cart: *Cart, ppu: *Ppu(.Accurate), controller: *Controller) Memory {
             return Memory{
                 .cart = cart,
                 .ppu = ppu,
@@ -121,7 +121,7 @@ pub const Cpu = struct {
         pub fn peek(self: Memory, addr: u16) u8 {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                0x2000...0x3fff => return self.ppu.reg.peek(@intCast(u3, addr & 0x7)),
+                0x2000...0x3fff => return self.ppu.reg.peek(@truncate(u3, addr)),
                 0x8000...0xffff => return self.cart.peekPrg(addr & 0x7fff),
                 else => return 0,
             }
@@ -130,7 +130,7 @@ pub const Cpu = struct {
         pub fn read(self: Memory, addr: u16) u8 {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                0x2000...0x3fff => return self.ppu.reg.read(@intCast(u3, addr & 0x7)),
+                0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
                 0x8000...0xffff => return self.cart.readPrg(addr & 0x7fff),
                 0x4016 => return self.controller.getNextButton(),
                 else => {
@@ -148,7 +148,7 @@ pub const Cpu = struct {
         pub fn write(self: *Memory, addr: u16, val: u8) void {
             switch (addr) {
                 0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
-                0x2000...0x3fff => self.ppu.reg.write(@intCast(u3, addr & 7), val),
+                0x2000...0x3fff => self.ppu.reg.write(@truncate(u3, addr), val),
                 0x4014 => @fieldParentPtr(Cpu, "mem", self).dma(val),
                 0x4016 => if (val & 1 == 1) {
                     self.controller.strobe();
@@ -160,7 +160,7 @@ pub const Cpu = struct {
         }
     };
 
-    pub fn init(cart: *Cart, ppu: *Ppu, controller: *Controller) Cpu {
+    pub fn init(cart: *Cart, ppu: *Ppu(.Accurate), controller: *Controller) Cpu {
         return Cpu{
             .reg = Registers.startup(),
             .mem = Memory.zeroes(cart, ppu, controller),
@@ -179,8 +179,8 @@ pub const Cpu = struct {
     }
 
     pub fn nmi(self: *Cpu) void {
-        self.pushStack(@intCast(u8, self.reg.pc >> 8));
-        self.pushStack(@intCast(u8, self.reg.pc & 0xff));
+        self.pushStack(@truncate(u8, self.reg.pc >> 8));
+        self.pushStack(@truncate(u8, self.reg.pc));
         self.pushStack(self.reg.p | 0b0010_0000);
         self.reg.setFlag("I", true);
         self.reg.pc = self.mem.readWord(0xfffa);
@@ -189,7 +189,12 @@ pub const Cpu = struct {
     pub fn dma(self: *Cpu, addr_high: u8) void {
         var i: usize = 0;
         while (i < 256) : (i += 1) {
-            self.ppu.mem.oam[i] = self.mem.read((@as(u16, addr_high) << 8) | @intCast(u8, i));
+            // TODO: just to get compiling
+            if (@TypeOf(self.ppu.*) == Ppu(.Fast)) {
+                self.ppu.mem.oam[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
+            } else {
+                self.ppu.oam.primary[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
+            }
             self.ppu.runCycle();
             self.ppu.runCycle();
         }
@@ -315,12 +320,12 @@ pub const Cpu = struct {
                 const sum: u9 = @as(u9, self.reg.a) +
                     @as(u9, original) +
                     @as(u9, self.reg.getFlags("C"));
-                const sum_u8: u8 = @intCast(u8, sum & 0xff);
+                const sum_u8: u8 = @truncate(u8, sum);
 
                 const n_flag = sum_u8 & 0x80;
                 const v_flag = (((self.reg.a ^ sum_u8) & (original ^ sum_u8)) & 0x80) >> 1;
                 const z_flag = @as(u8, @boolToInt(sum_u8 == 0)) << 1;
-                const c_flag = @intCast(u8, (sum & 0x100) >> 8);
+                const c_flag = @truncate(u8, (sum & 0x100) >> 8);
                 self.reg.setFlags("NVZC", n_flag | v_flag | z_flag | c_flag);
 
                 self.reg.a = sum_u8;
@@ -352,8 +357,8 @@ pub const Cpu = struct {
             },
             .OpBrk => {
                 var push_sp = self.reg.pc +% 1;
-                self.pushStack(@intCast(u8, push_sp >> 8));
-                self.pushStack(@intCast(u8, push_sp & 0xff));
+                self.pushStack(@truncate(u8, push_sp >> 8));
+                self.pushStack(@truncate(u8, push_sp));
                 self.pushStack(self.reg.p | 0b0011_0000);
                 self.reg.pc = self.mem.readWord(0xfffe);
             },
@@ -409,8 +414,8 @@ pub const Cpu = struct {
             .OpJmp => self.reg.pc = value.Memory -% 2,
             .OpJsr => {
                 var push_sp = self.reg.pc +% 1;
-                self.pushStack(@intCast(u8, push_sp >> 8));
-                self.pushStack(@intCast(u8, push_sp & 0xff));
+                self.pushStack(@truncate(u8, push_sp >> 8));
+                self.pushStack(@truncate(u8, push_sp));
                 self.reg.pc = value.Memory -% 2;
             },
             .OpLda => {
@@ -477,12 +482,12 @@ pub const Cpu = struct {
                 const dif: u9 = @as(u9, self.reg.a) -%
                     @as(u9, original) -%
                     @as(u9, @boolToInt(!self.reg.getFlag("C")));
-                const dif_u8: u8 = @intCast(u8, dif & 0xff);
+                const dif_u8: u8 = @truncate(u8, dif);
 
                 const n_flag = dif_u8 & 0x80;
                 const v_flag = (((self.reg.a ^ dif_u8) & (~original ^ dif_u8)) & 0x80) >> 1;
                 const z_flag = @as(u8, @boolToInt(dif_u8 == 0)) << 1;
-                const c_flag = ~@intCast(u1, (dif & 0x100) >> 8);
+                const c_flag = ~@truncate(u1, (dif & 0x100) >> 8);
                 self.reg.setFlags("NVZC", n_flag | v_flag | z_flag | c_flag);
 
                 self.reg.a = dif_u8;

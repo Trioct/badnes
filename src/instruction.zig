@@ -1,12 +1,8 @@
 const std = @import("std");
 const Cpu = @import("cpu.zig").Cpu;
+const Precision = @import("main.zig").Precision;
 
 // TODO: LUT this mess
-
-pub const Precision = enum {
-    Fast,
-    Accurate,
-};
 
 pub fn Op(comptime precision: Precision) type {
     _ = precision;
@@ -334,9 +330,9 @@ fn decodeFast(opcode: u8) Instruction(.Fast) {
 fn decodeAccurate(opcode: u8) Instruction(.Accurate) {
     const OpAcc = Op(.Accurate);
 
-    const aaa: u3 = @intCast(u3, (opcode >> 5) & 0b111);
-    const bbb: u3 = @intCast(u3, (opcode >> 2) & 0b111);
-    const cc: u2 = @intCast(u2, opcode & 0b11);
+    const aaa: u3 = @truncate(u3, opcode >> 5);
+    const bbb: u3 = @truncate(u3, opcode >> 2);
+    const cc: u2 = @truncate(u2, opcode);
 
     switch (cc) {
         0b00 => {

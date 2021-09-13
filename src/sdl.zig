@@ -232,7 +232,7 @@ pub const FrameBuffer = struct {
     texture: *c.SDL_Texture,
     pixels: ?[]u32 = null,
     width: usize,
-    byte_count: usize,
+    pixel_count: usize,
 
     pub fn init(renderer: *c.SDL_Renderer, width: usize, height: usize) !FrameBuffer {
         const texture = try createTexture(.{
@@ -246,7 +246,7 @@ pub const FrameBuffer = struct {
             FrameBuffer{
             .texture = texture,
             .width = width,
-            .byte_count = width * height * 4,
+            .pixel_count = width * height,
         };
         try fb.lock();
         return fb;
@@ -261,7 +261,7 @@ pub const FrameBuffer = struct {
         var pitch: c_int = undefined;
         try lockTexture(.{ self.texture, null, &pixels, &pitch });
         if (pixels) |ptr| {
-            self.pixels = @ptrCast([*]u32, @alignCast(4, ptr))[0..self.byte_count];
+            self.pixels = @ptrCast([*]u32, @alignCast(4, ptr))[0..self.pixel_count];
         }
     }
 

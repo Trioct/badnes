@@ -56,7 +56,7 @@ pub const Cart = struct {
     pub const peekPrg = readPrg;
 
     pub fn readPrg(self: Cart, address: u16) u8 {
-        return self.rom.prg[address & 0x7fff];
+        return self.rom.prg[address & 0x3fff];
     }
 
     pub fn writePrg(self: *Cart, address: u16, val: u8) void {
