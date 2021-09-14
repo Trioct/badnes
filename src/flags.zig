@@ -140,9 +140,17 @@ pub fn CreateFlags(comptime T: type, comptime ff_defs: []const FieldFlagsDef) ty
         pub fn setFlags(_: @This(), structure: *T, comptime field_flags: FieldFlags, val: u8) void {
             const ff_mask = comptime getFlagMask(field_flags);
             const field = &@field(structure, ff_mask.field);
-            field.* = (field.* & ~ff_mask.mask) | (val & ff_mask.mask);
+            setMask(u8, field, val, ff_mask.mask);
         }
     };
+}
+
+pub fn getMaskBool(comptime T: type, val: T, mask: T) bool {
+    return (val & mask) != 0;
+}
+
+pub fn setMask(comptime T: type, lhs: *T, rhs: T, mask: T) void {
+    lhs.* = (lhs.* & ~mask) | (rhs & mask);
 }
 
 const testing = std.testing;

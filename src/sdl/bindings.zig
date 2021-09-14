@@ -1,10 +1,38 @@
 const std = @import("std");
-
 pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
+    @cInclude("SDL2/SDL_audio.h");
 });
 
-const SdlError = error{
+pub const Window = c.SDL_Window;
+pub const Renderer = c.SDL_Renderer;
+pub const Texture = c.SDL_Texture;
+
+pub const init = wrap(c.SDL_Init);
+pub const quit = wrap(c.SDL_Quit);
+
+pub const createWindow = wrap(c.SDL_CreateWindow);
+pub const createRenderer = wrap(c.SDL_CreateRenderer);
+pub const destroyWindow = wrap(c.SDL_DestroyWindow);
+pub const destroyRenderer = wrap(c.SDL_DestroyRenderer);
+
+pub const pollEvent = wrapWithOptions(c.SDL_PollEvent, .{ .int = .IntToZig });
+pub const getKeyboardState = wrapWithOptions(c.SDL_GetKeyboardState, .{
+    .many_ptr_to_single = false,
+});
+
+pub const createTexture = wrap(c.SDL_CreateTexture);
+pub const destroyTexture = wrap(c.SDL_DestroyTexture);
+pub const lockTexture = wrap(c.SDL_LockTexture);
+pub const unlockTexture = wrap(c.SDL_UnlockTexture);
+pub const renderCopy = wrap(c.SDL_RenderCopy);
+pub const renderPresent = wrap(c.SDL_RenderPresent);
+
+pub const openAudioDevice = wrapWithOptions(c.SDL_OpenAudioDevice, .{ .int = null });
+pub const closeAudioDevice = wrap(c.SDL_CloseAudioDevice);
+pub const pauseAudioDevice = wrap(c.SDL_PauseAudioDevice);
+
+pub const SdlError = error{
     Error,
 };
 
@@ -162,123 +190,3 @@ fn wrapWithOptions(
         else => @compileError("Can't wrap a non-function"),
     }
 }
-
-pub const init = wrap(c.SDL_Init);
-pub const quit = wrap(c.SDL_Quit);
-
-pub const createWindow = wrap(c.SDL_CreateWindow);
-pub const createRenderer = wrap(c.SDL_CreateRenderer);
-pub const destroyWindow = wrap(c.SDL_DestroyWindow);
-pub const destroyRenderer = wrap(c.SDL_DestroyRenderer);
-
-pub const pollEvent = wrapWithOptions(c.SDL_PollEvent, .{ .int = .IntToZig });
-pub const getKeyboardState = wrapWithOptions(c.SDL_GetKeyboardState, .{
-    .many_ptr_to_single = false,
-});
-
-pub const createTexture = wrap(c.SDL_CreateTexture);
-pub const destroyTexture = wrap(c.SDL_DestroyTexture);
-pub const lockTexture = wrap(c.SDL_LockTexture);
-pub const unlockTexture = wrap(c.SDL_UnlockTexture);
-pub const renderCopy = wrap(c.SDL_RenderCopy);
-pub const renderPresent = wrap(c.SDL_RenderPresent);
-
-pub const SdlContext = struct {
-    window: *c.SDL_Window,
-    renderer: *c.SDL_Renderer,
-    frame_buffer: FrameBuffer,
-
-    pub fn init(title: [:0]const u8, x: u31, y: u31, w: u31, h: u31) !SdlContext {
-        const window = try createWindow(.{
-            title,
-            @as(c_int, x),
-            @as(c_int, y),
-            @as(c_int, w),
-            @as(c_int, h),
-            c.SDL_WINDOW_SHOWN,
-        });
-        errdefer destroyWindow(.{window});
-
-        const renderer = try createRenderer(.{ window, -1, c.SDL_RENDERER_ACCELERATED });
-
-        return SdlContext{
-            .window = window,
-            .renderer = renderer,
-            .frame_buffer = try FrameBuffer.init(renderer, 256, 240),
-        };
-    }
-
-    pub fn deinit(self: SdlContext) void {
-        self.frame_buffer.deinit();
-        destroyRenderer(.{self.renderer});
-        destroyWindow(.{self.window});
-    }
-
-    /// Lock the window's surface for direct pixel writing
-    pub fn lock(self: SdlContext) !FrameBuffer {
-        var surface = try getWindowSurface(.{self.window});
-        try lockSurface(.{surface});
-        return FrameBuffer.init(surface) orelse return SdlError.Error;
-    }
-
-    pub fn unlock(self: SdlContext) !void {
-        const surface = try getWindowSurface(.{self.window});
-        unlockSurface(.{surface});
-        try updateWindowSurface(.{self.window});
-    }
-};
-
-pub const FrameBuffer = struct {
-    texture: *c.SDL_Texture,
-    pixels: ?[]u32 = null,
-    width: usize,
-    pixel_count: usize,
-
-    pub fn init(renderer: *c.SDL_Renderer, width: usize, height: usize) !FrameBuffer {
-        const texture = try createTexture(.{
-            renderer,
-            c.SDL_PIXELFORMAT_RGB888, // consider RGB24?
-            c.SDL_TEXTUREACCESS_STREAMING,
-            @intCast(c_int, width),
-            @intCast(c_int, height),
-        });
-        var fb =
-            FrameBuffer{
-            .texture = texture,
-            .width = width,
-            .pixel_count = width * height,
-        };
-        try fb.lock();
-        return fb;
-    }
-
-    pub fn deinit(self: FrameBuffer) void {
-        destroyTexture(.{self.texture});
-    }
-
-    pub fn lock(self: *FrameBuffer) !void {
-        var pixels: ?*c_void = undefined;
-        var pitch: c_int = undefined;
-        try lockTexture(.{ self.texture, null, &pixels, &pitch });
-        if (pixels) |ptr| {
-            self.pixels = @ptrCast([*]u32, @alignCast(4, ptr))[0..self.pixel_count];
-        }
-    }
-
-    pub fn unlock(self: FrameBuffer) void {
-        unlockTexture(.{self.texture});
-    }
-
-    pub fn putPixel(self: FrameBuffer, x: usize, y: usize, pixel: u32) void {
-        if (self.pixels) |pixels| {
-            pixels[x + y * self.width] = pixel;
-        }
-    }
-
-    pub fn present(self: *FrameBuffer, renderer: *c.SDL_Renderer) !void {
-        self.unlock();
-        try renderCopy(.{ renderer, self.texture, null, null });
-        renderPresent(.{renderer});
-        try self.lock();
-    }
-};

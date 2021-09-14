@@ -1,5 +1,5 @@
 const std = @import("std");
-const sdl = @import("sdl.zig");
+const sdl = @import("sdl/bindings.zig");
 
 const flags_ = @import("flags.zig");
 const CreateFlags = flags_.CreateFlags;

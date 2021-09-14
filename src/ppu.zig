@@ -1,5 +1,5 @@
-const PpuFast = @import("fast/ppu.zig").Ppu;
-const PpuAccurate = @import("accurate/ppu.zig").Ppu;
+const PpuFast = @import("ppu/fast.zig").Ppu;
+const PpuAccurate = @import("ppu/accurate.zig").Ppu;
 
 const Precision = @import("main.zig").Precision;
 

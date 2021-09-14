@@ -9,6 +9,7 @@ const Instruction = instruction_.Instruction;
 const Precision = @import("main.zig").Precision;
 const Cart = @import("cart.zig").Cart;
 const Ppu = @import("ppu.zig").Ppu;
+const Apu = @import("apu.zig").Apu;
 const Controller = @import("controller.zig").Controller;
 
 const flags_ = @import("flags.zig");
@@ -19,6 +20,7 @@ pub const Cpu = struct {
     reg: Registers,
     mem: Memory,
     ppu: *Ppu(.Accurate),
+    apu: *Apu,
     cycles: usize = 0,
 
     pub const Registers = struct {
@@ -105,14 +107,16 @@ pub const Cpu = struct {
     pub const Memory = struct {
         cart: *Cart,
         ppu: *Ppu(.Accurate),
+        apu: *Apu,
         controller: *Controller,
         ram: [0x800]u8,
 
         // TODO: implement non-zero pattern?
-        pub fn zeroes(cart: *Cart, ppu: *Ppu(.Accurate), controller: *Controller) Memory {
+        pub fn zeroes(cart: *Cart, ppu: *Ppu(.Accurate), apu: *Apu, controller: *Controller) Memory {
             return Memory{
                 .cart = cart,
                 .ppu = ppu,
+                .apu = apu,
                 .controller = controller,
                 .ram = [_]u8{0} ** 0x800,
             };
@@ -132,6 +136,7 @@ pub const Cpu = struct {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
                 0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
                 0x8000...0xffff => return self.cart.readPrg(addr & 0x7fff),
+                0x4000...0x4013 => return self.apu.read(@truncate(u4, addr)),
                 0x4016 => return self.controller.getNextButton(),
                 else => {
                     //std.log.err("Unimplemented read memory address ({x:0>4})", .{addr});
@@ -149,6 +154,7 @@ pub const Cpu = struct {
             switch (addr) {
                 0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
                 0x2000...0x3fff => self.ppu.reg.write(@truncate(u3, addr), val),
+                0x4000...0x4013 => self.apu.write(@truncate(u4, addr), val),
                 0x4014 => @fieldParentPtr(Cpu, "mem", self).dma(val),
                 0x4016 => if (val & 1 == 1) {
                     self.controller.strobe();
@@ -160,11 +166,12 @@ pub const Cpu = struct {
         }
     };
 
-    pub fn init(cart: *Cart, ppu: *Ppu(.Accurate), controller: *Controller) Cpu {
+    pub fn init(cart: *Cart, ppu: *Ppu(.Accurate), apu: *Apu, controller: *Controller) Cpu {
         return Cpu{
             .reg = Registers.startup(),
-            .mem = Memory.zeroes(cart, ppu, controller),
+            .mem = Memory.zeroes(cart, ppu, apu, controller),
             .ppu = ppu,
+            .apu = apu,
         };
     }
 
@@ -195,6 +202,12 @@ pub const Cpu = struct {
             } else {
                 self.ppu.oam.primary[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
             }
+            self.apu.runCycle();
+            self.ppu.runCycle();
+            self.ppu.runCycle();
+            self.ppu.runCycle();
+            self.apu.runCycle();
+            self.ppu.runCycle();
             self.ppu.runCycle();
             self.ppu.runCycle();
         }
@@ -525,7 +538,10 @@ pub const Cpu = struct {
         self.cycles += instruction.cycles;
 
         var i: usize = 0;
-        while (i < @as(usize, instruction.cycles) * 3) : (i += 1) {
+        while (i < @as(usize, instruction.cycles)) : (i += 1) {
+            self.apu.runCycle();
+            self.ppu.runCycle();
+            self.ppu.runCycle();
             self.ppu.runCycle();
         }
     }
