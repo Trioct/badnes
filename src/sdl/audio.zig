@@ -3,14 +3,14 @@ const Allocator = std.mem.Allocator;
 
 const sdl = @import("bindings.zig");
 
-pub const sample_rate = 44100 / 2;
-pub const sdl_buffer_size = 1024;
-
 // TODO: make alternative that syncs video to audio instead of
 // trying to sync audio to video
-pub const AudioContext = struct {
+pub const Context = struct {
     device: sdl.c.SDL_AudioDeviceID,
     buffer: SampleBuffer,
+
+    pub const sample_rate = 44100 / 2;
+    pub const sdl_buffer_size = 1024;
 
     const SampleBuffer = struct {
         samples: []f32,
@@ -56,15 +56,15 @@ pub const AudioContext = struct {
         }
     };
 
-    pub fn alloc(allocator: *Allocator) !AudioContext {
-        const buffer = try allocator.alloc(f32, sample_rate);
-        return AudioContext{
+    pub fn alloc(allocator: *Allocator) !Context {
+        const buffer = try allocator.alloc(f32, Context.sample_rate);
+        return Context{
             .device = undefined,
-            .buffer = SampleBuffer.init(buffer, (sample_rate / 6) - 1024),
+            .buffer = SampleBuffer.init(buffer, (Context.sample_rate / 6) - 1024),
         };
     }
 
-    pub fn init(self: *AudioContext) !void {
+    pub fn init(self: *Context) !void {
         var want = sdl.c.SDL_AudioSpec{
             .freq = sample_rate,
             .format = sdl.c.AUDIO_F32SYS,
@@ -87,25 +87,25 @@ pub const AudioContext = struct {
         self.pause();
     }
 
-    pub fn deinit(self: *AudioContext, allocator: *Allocator) void {
+    pub fn deinit(self: *Context, allocator: *Allocator) void {
         sdl.closeAudioDevice(.{self.device});
         allocator.free(self.buffer.samples);
     }
 
-    pub fn pause(self: AudioContext) void {
+    pub fn pause(self: Context) void {
         sdl.pauseAudioDevice(.{ self.device, 1 });
     }
 
-    pub fn unpause(self: AudioContext) void {
+    pub fn unpause(self: Context) void {
         sdl.pauseAudioDevice(.{ self.device, 0 });
     }
 
-    pub fn addSample(self: *AudioContext, val: f32) !void {
+    pub fn addSample(self: *Context, val: f32) !void {
         self.buffer.append(val);
     }
 
     fn audioCallback(user_data: ?*c_void, raw_buffer: [*c]u8, samples: c_int) callconv(.C) void {
-        var context = @ptrCast(*AudioContext, @alignCast(@sizeOf(@TypeOf(user_data)), user_data.?));
+        var context = @ptrCast(*Context, @alignCast(@sizeOf(@TypeOf(user_data)), user_data.?));
         var buffer = @ptrCast([*]f32, @alignCast(4, raw_buffer))[0..@intCast(usize, @divExact(samples, 4))];
 
         const ps = @intToFloat(f64, context.buffer.preferred_size);

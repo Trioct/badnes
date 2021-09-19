@@ -3,7 +3,7 @@ const time = std.time;
 
 const sdl = @import("bindings.zig");
 
-pub const VideoContext = struct {
+pub const Context = struct {
     window: *sdl.Window,
     renderer: *sdl.Renderer,
     frame_buffer: FrameBuffer,
@@ -11,7 +11,7 @@ pub const VideoContext = struct {
     last_frame_time: i128,
     next_frame_time: i128,
 
-    pub fn init(title: [:0]const u8, x: u31, y: u31, w: u31, h: u31) !VideoContext {
+    pub fn init(title: [:0]const u8, x: u31, y: u31, w: u31, h: u31) !Context {
         const window = try sdl.createWindow(.{
             title,
             @as(c_int, x),
@@ -25,7 +25,7 @@ pub const VideoContext = struct {
         const renderer = try sdl.createRenderer(.{ window, -1, sdl.c.SDL_RENDERER_ACCELERATED });
         const now = time.nanoTimestamp();
 
-        return VideoContext{
+        return Context{
             .window = window,
             .renderer = renderer,
             .frame_buffer = try FrameBuffer.init(renderer, 256, 240),
@@ -35,7 +35,7 @@ pub const VideoContext = struct {
         };
     }
 
-    pub fn deinit(self: VideoContext) void {
+    pub fn deinit(self: Context) void {
         self.frame_buffer.deinit();
         sdl.destroyRenderer(.{self.renderer});
         sdl.destroyWindow(.{self.window});
@@ -49,7 +49,7 @@ pub const VideoContext = struct {
         framerate: usize = 60,
     };
 
-    pub fn drawFrame(self: *VideoContext, draw_options: DrawOptions) !i128 {
+    pub fn drawFrame(self: *Context, draw_options: DrawOptions) !i128 {
         try self.frame_buffer.present(self.renderer);
 
         const frame_ns = time.ns_per_s / draw_options.framerate;

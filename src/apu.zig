@@ -1,7 +1,7 @@
 const std = @import("std");
-const audio = @import("sdl/audio.zig");
-const AudioContext = audio.AudioContext;
+const audio = @import("audio.zig");
 
+const Config = @import("console.zig").Config;
 const Cpu = @import("cpu.zig").Cpu;
 const flags = @import("flags.zig");
 
@@ -25,164 +25,170 @@ const triangle_duty_values = [_]u8{
     0,  1,  2,  3,  4,  5,  6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 };
 
-pub const Apu = struct {
-    reg: Registers,
+pub fn Apu(comptime config: Config) type {
+    return struct {
+        const Self = @This();
 
-    cycles: usize = 0,
-    frame_counter: usize = 0,
-    audio_context: *AudioContext,
+        reg: Registers,
 
-    next_frame_counter_timer: CycleTimer = CycleTimer.set(0),
-    next_output_timer: CycleTimer = CycleTimer.set(0),
+        cycles: usize = 0,
+        frame_counter: usize = 0,
+        audio_context: *audio.Context(config.method),
 
-    const CycleTimer = struct {
-        whole: usize,
-        frac: f32,
+        next_frame_counter_timer: CycleTimer = CycleTimer.set(0),
+        next_output_timer: CycleTimer = CycleTimer.set(0),
 
-        fn init() CycleTimer {
-            return CycleTimer.set(0);
-        }
+        const CycleTimer = struct {
+            whole: usize,
+            frac: f32,
 
-        fn set(cycle: usize) CycleTimer {
-            return CycleTimer{
-                .whole = cycle,
-                .frac = 0,
-            };
-        }
-
-        fn setNext(self: *CycleTimer, offset: f32) void {
-            self.frac += offset;
-
-            const mod = std.math.modf(self.frac);
-            self.frac -= mod.ipart;
-            self.whole += @floatToInt(usize, mod.ipart);
-        }
-
-        fn isDone(self: CycleTimer, cycle: usize) bool {
-            return self.whole == cycle;
-        }
-    };
-
-    // TODO: maybe rearrange stuff to avoid huge indentation levels
-    pub const Registers = struct {
-        pulse1: PulseChannel,
-        pulse2: PulseChannel,
-        triangle: TriangleChannel,
-    };
-
-    pub fn init(audio_context: *AudioContext) Apu {
-        return Apu{
-            .reg = std.mem.zeroes(Registers),
-
-            .audio_context = audio_context,
-        };
-    }
-
-    pub fn read(self: Apu, addr: u5) u8 {
-        const reg = &self.reg;
-        switch (addr) {
-            0x15 => {
-                var val: u8 = 0;
-                val |= @as(u3, @boolToInt(reg.triangle.length_counter.value > 0)) << 2;
-                val |= @as(u2, @boolToInt(reg.pulse2.length_counter.value > 0)) << 1;
-                val |= @boolToInt(reg.pulse1.length_counter.value > 0);
-                return val;
-            },
-            else => return 0,
-        }
-    }
-
-    pub fn write(self: *Apu, addr: u5, val: u8) void {
-        // TODO: probably move these into functions in the registers
-        const reg = &self.reg;
-        switch (addr) {
-            // pulse
-            0x00...0x03 => reg.pulse1.write(@truncate(u2, addr), val),
-            0x04...0x07 => reg.pulse2.write(@truncate(u2, addr), val),
-
-            // triangle
-            0x08 => {
-                reg.triangle.length_counter.halt = flags.getMaskBool(u8, val, 0x80);
-                reg.triangle.linear_counter.period = @truncate(u7, val);
-            },
-            0x0a => {
-                flags.setMask(u11, &reg.triangle.timer.period, val, 0xff);
-            },
-            0x0b => {
-                reg.triangle.linear_counter.reload = true;
-                reg.triangle.length_counter.setValue(length_counter_table[val >> 3]);
-                flags.setMask(u11, &reg.triangle.timer.period, @as(u11, val) << 8, 0x700);
-            },
-
-            0x15 => {
-                _ = flags.getMaskBool(u8, val, 0x10); // DMC enable
-                _ = flags.getMaskBool(u8, val, 0x08); // noise length enable
-                reg.triangle.length_counter.setEnabled(flags.getMaskBool(u8, val, 0x04));
-                reg.pulse2.length_counter.setEnabled(flags.getMaskBool(u8, val, 0x02));
-                reg.pulse1.length_counter.setEnabled(flags.getMaskBool(u8, val, 0x01));
-            },
-            else => {},
-        }
-    }
-
-    fn stepQuarterFrame(self: *Apu) void {
-        self.reg.pulse1.stepEnvelope();
-        self.reg.pulse2.stepEnvelope();
-        self.reg.triangle.stepLinear();
-    }
-
-    fn stepHalfFrame(self: *Apu) void {
-        _ = self.reg.pulse1.length_counter.step();
-        _ = self.reg.pulse2.length_counter.step();
-        _ = self.reg.triangle.length_counter.step();
-
-        self.reg.pulse1.stepSweep();
-        self.reg.pulse2.stepSweep();
-    }
-
-    fn getOutput(self: *Apu) f32 {
-        const p1_out = @intToFloat(f32, self.reg.pulse1.output());
-        const p2_out = @intToFloat(f32, self.reg.pulse2.output());
-        const pulse_out = 0.00752 * (p1_out + p2_out);
-        const tnd_out = 0.00851 * @intToFloat(f32, self.reg.triangle.output());
-        return pulse_out + tnd_out;
-    }
-
-    pub fn runCycle(self: *Apu) void {
-        self.reg.triangle.stepTimer();
-        if (self.cycles & 1 == 1) {
-            self.reg.pulse1.stepTimer();
-            self.reg.pulse2.stepTimer();
-        }
-
-        if (self.next_frame_counter_timer.isDone(self.cycles)) {
-            // TODO: mode 1, interrupts
-            switch (@truncate(u2, self.frame_counter)) {
-                0, 2 => {
-                    self.stepQuarterFrame();
-                },
-                1 => {
-                    self.stepQuarterFrame();
-                    self.stepHalfFrame();
-                },
-                3 => {
-                    self.stepQuarterFrame();
-                },
+            fn init() CycleTimer {
+                return CycleTimer.set(0);
             }
-            self.frame_counter +%= 1;
-            self.next_frame_counter_timer.setNext(@intToFloat(f32, cpu_freq) * frame_counter_rate);
-        }
 
-        if (self.next_output_timer.isDone(self.cycles)) {
-            self.audio_context.addSample(self.getOutput()) catch {
-                std.log.err("Couldn't add sample", .{});
+            fn set(cycle: usize) CycleTimer {
+                return CycleTimer{
+                    .whole = cycle,
+                    .frac = 0,
+                };
+            }
+
+            fn setNext(self: *CycleTimer, offset: f32) void {
+                self.frac += offset;
+
+                const mod = std.math.modf(self.frac);
+                self.frac -= mod.ipart;
+                self.whole += @floatToInt(usize, mod.ipart);
+            }
+
+            fn isDone(self: CycleTimer, cycle: usize) bool {
+                return self.whole == cycle;
+            }
+        };
+
+        // TODO: maybe rearrange stuff to avoid huge indentation levels
+        pub const Registers = struct {
+            pulse1: PulseChannel,
+            pulse2: PulseChannel,
+            triangle: TriangleChannel,
+        };
+
+        pub fn init(audio_context: *audio.Context(config.method)) Self {
+            return Self{
+                .reg = std.mem.zeroes(Registers),
+
+                .audio_context = audio_context,
             };
-            self.next_output_timer.setNext(@intToFloat(f32, cpu_freq) / @intToFloat(f32, audio.sample_rate));
         }
 
-        self.cycles +%= 1;
-    }
-};
+        pub fn read(self: Self, addr: u5) u8 {
+            const reg = &self.reg;
+            switch (addr) {
+                0x15 => {
+                    var val: u8 = 0;
+                    val |= @as(u3, @boolToInt(reg.triangle.length_counter.value > 0)) << 2;
+                    val |= @as(u2, @boolToInt(reg.pulse2.length_counter.value > 0)) << 1;
+                    val |= @boolToInt(reg.pulse1.length_counter.value > 0);
+                    return val;
+                },
+                else => return 0,
+            }
+        }
+
+        pub fn write(self: *Self, addr: u5, val: u8) void {
+            // TODO: probably move these into functions in the registers
+            const reg = &self.reg;
+            switch (addr) {
+                // pulse
+                0x00...0x03 => reg.pulse1.write(@truncate(u2, addr), val),
+                0x04...0x07 => reg.pulse2.write(@truncate(u2, addr), val),
+
+                // triangle
+                0x08 => {
+                    reg.triangle.length_counter.halt = flags.getMaskBool(u8, val, 0x80);
+                    reg.triangle.linear_counter.period = @truncate(u7, val);
+                },
+                0x0a => {
+                    flags.setMask(u11, &reg.triangle.timer.period, val, 0xff);
+                },
+                0x0b => {
+                    reg.triangle.linear_counter.reload = true;
+                    reg.triangle.length_counter.setValue(length_counter_table[val >> 3]);
+                    flags.setMask(u11, &reg.triangle.timer.period, @as(u11, val) << 8, 0x700);
+                },
+
+                0x15 => {
+                    _ = flags.getMaskBool(u8, val, 0x10); // DMC enable
+                    _ = flags.getMaskBool(u8, val, 0x08); // noise length enable
+                    reg.triangle.length_counter.setEnabled(flags.getMaskBool(u8, val, 0x04));
+                    reg.pulse2.length_counter.setEnabled(flags.getMaskBool(u8, val, 0x02));
+                    reg.pulse1.length_counter.setEnabled(flags.getMaskBool(u8, val, 0x01));
+                },
+                else => {},
+            }
+        }
+
+        fn stepQuarterFrame(self: *Self) void {
+            self.reg.pulse1.stepEnvelope();
+            self.reg.pulse2.stepEnvelope();
+            self.reg.triangle.stepLinear();
+        }
+
+        fn stepHalfFrame(self: *Self) void {
+            _ = self.reg.pulse1.length_counter.step();
+            _ = self.reg.pulse2.length_counter.step();
+            _ = self.reg.triangle.length_counter.step();
+
+            self.reg.pulse1.stepSweep();
+            self.reg.pulse2.stepSweep();
+        }
+
+        fn getOutput(self: *Self) f32 {
+            const p1_out = @intToFloat(f32, self.reg.pulse1.output());
+            const p2_out = @intToFloat(f32, self.reg.pulse2.output());
+            const pulse_out = 0.00752 * (p1_out + p2_out);
+            const tnd_out = 0.00851 * @intToFloat(f32, self.reg.triangle.output());
+            return pulse_out + tnd_out;
+        }
+
+        pub fn runCycle(self: *Self) void {
+            self.reg.triangle.stepTimer();
+            if (self.cycles & 1 == 1) {
+                self.reg.pulse1.stepTimer();
+                self.reg.pulse2.stepTimer();
+            }
+
+            if (self.next_frame_counter_timer.isDone(self.cycles)) {
+                // TODO: mode 1, interrupts
+                switch (@truncate(u2, self.frame_counter)) {
+                    0, 2 => {
+                        self.stepQuarterFrame();
+                    },
+                    1 => {
+                        self.stepQuarterFrame();
+                        self.stepHalfFrame();
+                    },
+                    3 => {
+                        self.stepQuarterFrame();
+                    },
+                }
+                self.frame_counter +%= 1;
+                self.next_frame_counter_timer.setNext(@intToFloat(f32, cpu_freq) * frame_counter_rate);
+            }
+
+            if (self.next_output_timer.isDone(self.cycles)) {
+                self.audio_context.addSample(self.getOutput()) catch {
+                    std.log.err("Couldn't add sample", .{});
+                };
+                const freq_f = @intToFloat(f32, cpu_freq);
+                const sample_f = @intToFloat(f32, audio.Context(config.method).sample_rate);
+                self.next_output_timer.setNext(freq_f / sample_f);
+            }
+
+            self.cycles +%= 1;
+        }
+    };
+}
 
 const Timer = struct {
     value: u11,

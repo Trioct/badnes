@@ -8,48 +8,66 @@ const Cpu = @import("cpu.zig").Cpu;
 const Apu = @import("apu.zig").Apu;
 const Controller = @import("controller.zig").Controller;
 
-const video = @import("sdl/video.zig");
-const audio = @import("sdl/audio.zig");
+const video = @import("video.zig");
+const audio = @import("audio.zig");
 
 pub const Precision = enum {
     Fast,
     Accurate,
 };
 
-pub const Console = struct {
-    cart: Cart,
-    ppu: Ppu(.Accurate),
-    cpu: Cpu,
-    apu: Apu,
-    controller: Controller,
-
-    pub fn alloc() Console {
-        return Console{
-            .cart = undefined,
-            .ppu = undefined,
-            .cpu = undefined,
-            .apu = undefined,
-            .controller = undefined,
-        };
-    }
-
-    pub fn init(self: *Console, frame_buffer: video.FrameBuffer, audio_context: *audio.AudioContext) void {
-        self.cart = Cart.init();
-        self.ppu = Ppu(.Accurate).init(self, frame_buffer);
-        self.cpu = Cpu.init(self);
-        self.apu = Apu.init(audio_context);
-        self.controller = Controller{};
-    }
-
-    pub fn deinit(self: Console, allocator: *Allocator) void {
-        self.cart.deinit(allocator);
-        self.ppu.deinit();
-        self.cpu.deinit();
-    }
-
-    pub fn loadRom(self: *Console, allocator: *Allocator, path: []const u8) !void {
-        var info = try ines.RomInfo.readFile(allocator, path);
-        defer info.deinit(allocator);
-        return self.cart.loadRom(allocator, self, &info);
-    }
+pub const OutputMethod = enum {
+    Pure,
+    Sdl,
 };
+
+pub const Config = struct {
+    precision: Precision,
+    method: OutputMethod,
+};
+
+pub fn Console(comptime config: Config) type {
+    return struct {
+        const Self = @This();
+
+        cart: Cart(config),
+        ppu: Ppu(config),
+        cpu: Cpu(config),
+        apu: Apu(config),
+        controller: Controller(config.method),
+
+        pub fn alloc() Self {
+            return Self{
+                .cart = undefined,
+                .ppu = undefined,
+                .cpu = undefined,
+                .apu = undefined,
+                .controller = undefined,
+            };
+        }
+
+        pub fn init(
+            self: *Self,
+            frame_buffer: video.FrameBuffer(config.method),
+            audio_context: *audio.Context(config.method),
+        ) void {
+            self.cart = Cart(config).init();
+            self.ppu = Ppu(config).init(self, frame_buffer);
+            self.cpu = Cpu(config).init(self);
+            self.apu = Apu(config).init(audio_context);
+            self.controller = Controller(config.method){};
+        }
+
+        pub fn deinit(self: Self, allocator: *Allocator) void {
+            self.cart.deinit(allocator);
+            self.ppu.deinit();
+            self.cpu.deinit();
+        }
+
+        pub fn loadRom(self: *Self, allocator: *Allocator, path: []const u8) !void {
+            var info = try ines.RomInfo.readFile(allocator, path);
+            defer info.deinit(allocator);
+            return self.cart.loadRom(allocator, self, &info);
+        }
+    };
+}

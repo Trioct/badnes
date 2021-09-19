@@ -4,8 +4,8 @@ const Allocator = std.mem.Allocator;
 const Console = @import("console.zig").Console;
 
 const sdl = @import("sdl/bindings.zig");
-const video = @import("sdl/video.zig");
-const audio = @import("sdl/audio.zig");
+const video = @import("video.zig");
+const audio = @import("audio.zig");
 
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -16,15 +16,15 @@ pub fn main() anyerror!void {
     try sdl.init(.{sdl.c.SDL_INIT_VIDEO | sdl.c.SDL_INIT_AUDIO | sdl.c.SDL_INIT_EVENTS});
     defer sdl.quit();
 
-    var video_context = try video.VideoContext.init("Badnes", 0, 0, 256 * 3, 240 * 3);
+    var video_context = try video.Context(.Sdl).init("Badnes", 0, 0, 256 * 3, 240 * 3);
     defer video_context.deinit();
 
-    var audio_context = try audio.AudioContext.alloc(allocator);
-    // need a errdefer too but lazy
+    var audio_context = try audio.Context(.Sdl).alloc(allocator);
+    // TODO: need a errdefer too but lazy
     try audio_context.init();
     defer audio_context.deinit(allocator);
 
-    var console = Console.alloc();
+    var console = Console(.{ .precision = .Accurate, .method = .Sdl }).alloc();
     console.init(video_context.frame_buffer, &audio_context);
     defer console.deinit(allocator);
 
@@ -65,7 +65,7 @@ pub fn main() anyerror!void {
                 audio_context.unpause();
             }
         }
-        console.cpu.runInstruction(.Fast);
+        console.cpu.runInstruction();
     }
 }
 

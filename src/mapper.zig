@@ -3,152 +3,174 @@ const builtin = std.builtin;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
-const Console = @import("console.zig").Console;
 const ines = @import("ines.zig");
 
-const MapperInitFn = fn (*Allocator, *Console, *ines.RomInfo) Allocator.Error!GenericMapper;
+const console_ = @import("console.zig");
+const Config = console_.Config;
+const Console = console_.Console;
 
-pub const GenericMapper = struct {
-    mapper_ptr: OpaquePtr,
+/// Avoids recursion in GenericMapper
+fn MapperInitFn(comptime config: Config) type {
+    return MapperInitFnSafe(GenericMapper(config), config);
+}
 
-    mapper_readPrg: fn (GenericMapper, u16) u8,
-    mapper_readChr: fn (GenericMapper, u16) u8,
+fn MapperInitFnSafe(comptime T: type, comptime config: Config) type {
+    return fn (*Allocator, *Console(config), *ines.RomInfo) Allocator.Error!T;
+}
 
-    mapper_writePrg: fn (*GenericMapper, u16, u8) void,
-    mapper_writeChr: fn (*GenericMapper, u16, u8) void,
+pub fn GenericMapper(comptime config: Config) type {
+    return struct {
+        const Self = @This();
 
-    mapper_deinit: fn (GenericMapper, *Allocator) void,
+        mapper_ptr: OpaquePtr,
 
-    const OpaquePtr = *align(@alignOf(usize)) opaque {};
+        mapper_readPrg: fn (Self, u16) u8,
+        mapper_readChr: fn (Self, u16) u8,
 
-    fn setup(comptime T: type) MapperInitFn {
-        GenericMapper.validateMapper(T);
-        return (struct {
-            pub fn init(allocator: *Allocator, console: *Console, info: *ines.RomInfo) Allocator.Error!GenericMapper {
-                const ptr = try allocator.create(T);
-                try T.initMem(ptr, allocator, console, info);
-                return GenericMapper{
-                    .mapper_ptr = @ptrCast(OpaquePtr, ptr),
+        mapper_writePrg: fn (*Self, u16, u8) void,
+        mapper_writeChr: fn (*Self, u16, u8) void,
 
-                    .mapper_readPrg = T.readPrg,
-                    .mapper_readChr = T.readChr,
+        mapper_deinit: fn (Self, *Allocator) void,
 
-                    .mapper_writePrg = T.writePrg,
-                    .mapper_writeChr = T.writeChr,
+        const OpaquePtr = *align(@alignOf(usize)) opaque {};
 
-                    .mapper_deinit = T.deinitMem,
-                };
-            }
-        }).init;
-    }
+        fn setup(comptime T: type) MapperInitFnSafe(Self, config) {
+            Self.validateMapper(T);
+            return (struct {
+                pub fn init(
+                    allocator: *Allocator,
+                    console: *Console(config),
+                    info: *ines.RomInfo,
+                ) Allocator.Error!Self {
+                    const ptr = try allocator.create(T);
+                    try T.initMem(ptr, allocator, console, info);
+                    return Self{
+                        .mapper_ptr = @ptrCast(OpaquePtr, ptr),
 
-    pub fn deinit(self: GenericMapper, allocator: *Allocator) void {
-        self.mapper_deinit(self, allocator);
-    }
+                        .mapper_readPrg = T.readPrg,
+                        .mapper_readChr = T.readChr,
 
-    pub fn readPrg(self: GenericMapper, addr: u16) u8 {
-        return self.mapper_readPrg(self, addr);
-    }
+                        .mapper_writePrg = T.writePrg,
+                        .mapper_writeChr = T.writeChr,
 
-    pub fn readChr(self: GenericMapper, addr: u16) u8 {
-        return self.mapper_readChr(self, addr);
-    }
+                        .mapper_deinit = T.deinitMem,
+                    };
+                }
+            }).init;
+        }
 
-    pub fn writePrg(self: *GenericMapper, addr: u16) void {
-        self.mapper_writePrg(self, addr);
-    }
+        pub fn deinit(self: Self, allocator: *Allocator) void {
+            self.mapper_deinit(self, allocator);
+        }
 
-    pub fn writeChr(self: *GenericMapper, addr: u16) void {
-        self.mapper_writeChr(self, addr);
-    }
+        pub fn readPrg(self: Self, addr: u16) u8 {
+            return self.mapper_readPrg(self, addr);
+        }
 
-    // I really don't need this because the type system will *probably* take care of it for me,
-    // but I want to be sure nothing unexpected happens
-    fn validateMapper(comptime T: type) void {
-        const type_info = @typeInfo(T);
+        pub fn readChr(self: Self, addr: u16) u8 {
+            return self.mapper_readChr(self, addr);
+        }
 
-        assert(std.meta.activeTag(type_info) == @typeInfo(builtin.TypeInfo).Union.tag_type.?.Struct);
+        pub fn writePrg(self: *Self, addr: u16) void {
+            self.mapper_writePrg(self, addr);
+        }
 
-        const InitFn = @typeInfo(@TypeOf(@as(T, undefined).initMem)).BoundFn;
-        const ReadPrgFn = @typeInfo(@TypeOf(@as(T, undefined).readPrg)).BoundFn;
-        const ReadChrFn = @typeInfo(@TypeOf(@as(T, undefined).readChr)).BoundFn;
-        const WritePrgFn = @typeInfo(@TypeOf(@as(T, undefined).writePrg)).BoundFn;
-        const WriteChrFn = @typeInfo(@TypeOf(@as(T, undefined).writeChr)).BoundFn;
-        const DeinitFn = @typeInfo(@TypeOf(@as(T, undefined).deinitMem)).BoundFn;
+        pub fn writeChr(self: *Self, addr: u16) void {
+            self.mapper_writeChr(self, addr);
+        }
 
-        assert(InitFn.args.len == 4);
-        assert(InitFn.args[0].arg_type == *T);
-        assert(InitFn.args[1].arg_type == *Allocator);
-        assert(InitFn.args[2].arg_type == *Console);
-        assert(InitFn.args[3].arg_type == *ines.RomInfo);
-        assert(InitFn.return_type == Allocator.Error!void);
+        // I really don't need this because the type system will *probably* take care of it for me,
+        // but I want to be sure nothing unexpected happens
+        fn validateMapper(comptime T: type) void {
+            const type_info = @typeInfo(T);
 
-        assert(ReadPrgFn.args.len == 2);
-        assert(ReadPrgFn.args[0].arg_type == GenericMapper);
-        assert(ReadPrgFn.args[1].arg_type == u16);
-        assert(ReadPrgFn.return_type == u8);
+            assert(std.meta.activeTag(type_info) == @typeInfo(builtin.TypeInfo).Union.tag_type.?.Struct);
 
-        assert(ReadChrFn.args.len == 2);
-        assert(ReadChrFn.args[0].arg_type == GenericMapper);
-        assert(ReadChrFn.args[1].arg_type == u16);
-        assert(ReadChrFn.return_type == u8);
+            const InitFn = @typeInfo(@TypeOf(@as(T, undefined).initMem)).BoundFn;
+            const ReadPrgFn = @typeInfo(@TypeOf(@as(T, undefined).readPrg)).BoundFn;
+            const ReadChrFn = @typeInfo(@TypeOf(@as(T, undefined).readChr)).BoundFn;
+            const WritePrgFn = @typeInfo(@TypeOf(@as(T, undefined).writePrg)).BoundFn;
+            const WriteChrFn = @typeInfo(@TypeOf(@as(T, undefined).writeChr)).BoundFn;
+            const DeinitFn = @typeInfo(@TypeOf(@as(T, undefined).deinitMem)).BoundFn;
 
-        assert(WritePrgFn.args.len == 3);
-        assert(WritePrgFn.args[0].arg_type == *GenericMapper);
-        assert(WritePrgFn.args[1].arg_type == u16);
-        assert(WritePrgFn.args[2].arg_type == u8);
-        assert(WritePrgFn.return_type == void);
+            assert(InitFn.args.len == 4);
+            assert(InitFn.args[0].arg_type == *T);
+            assert(InitFn.args[1].arg_type == *Allocator);
+            assert(InitFn.args[2].arg_type == *Console(config));
+            assert(InitFn.args[3].arg_type == *ines.RomInfo);
+            assert(InitFn.return_type == Allocator.Error!void);
 
-        assert(WriteChrFn.args.len == 3);
-        assert(WriteChrFn.args[0].arg_type == *GenericMapper);
-        assert(WriteChrFn.args[1].arg_type == u16);
-        assert(WriteChrFn.args[2].arg_type == u8);
-        assert(WriteChrFn.return_type == void);
+            assert(ReadPrgFn.args.len == 2);
+            assert(ReadPrgFn.args[0].arg_type == Self);
+            assert(ReadPrgFn.args[1].arg_type == u16);
+            assert(ReadPrgFn.return_type == u8);
 
-        assert(DeinitFn.args.len == 2);
-        assert(DeinitFn.args[0].arg_type == GenericMapper);
-        assert(DeinitFn.args[1].arg_type == *Allocator);
-        assert(DeinitFn.return_type == void);
-    }
-};
+            assert(ReadChrFn.args.len == 2);
+            assert(ReadChrFn.args[0].arg_type == Self);
+            assert(ReadChrFn.args[1].arg_type == u16);
+            assert(ReadChrFn.return_type == u8);
 
-const UnimplementedMapper = struct {
-    dummy: u64,
+            assert(WritePrgFn.args.len == 3);
+            assert(WritePrgFn.args[0].arg_type == *Self);
+            assert(WritePrgFn.args[1].arg_type == u16);
+            assert(WritePrgFn.args[2].arg_type == u8);
+            assert(WritePrgFn.return_type == void);
 
-    fn initMem(_: *UnimplementedMapper, _: *Allocator, _: *Console, _: *ines.RomInfo) Allocator.Error!void {
-        @panic("Mapper not implemented");
-    }
+            assert(WriteChrFn.args.len == 3);
+            assert(WriteChrFn.args[0].arg_type == *Self);
+            assert(WriteChrFn.args[1].arg_type == u16);
+            assert(WriteChrFn.args[2].arg_type == u8);
+            assert(WriteChrFn.return_type == void);
 
-    fn deinitMem(_: GenericMapper, _: *Allocator) void {
-        @panic("Mapper not implemented");
-    }
+            assert(DeinitFn.args.len == 2);
+            assert(DeinitFn.args[0].arg_type == Self);
+            assert(DeinitFn.args[1].arg_type == *Allocator);
+            assert(DeinitFn.return_type == void);
+        }
+    };
+}
 
-    fn readPrg(_: GenericMapper, _: u16) u8 {
-        @panic("Mapper not implemented");
-    }
+pub fn UnimplementedMapper(comptime config: Config) type {
+    const G = GenericMapper(config);
+    return struct {
+        dummy: u64,
 
-    fn readChr(_: GenericMapper, _: u16) u8 {
-        @panic("Mapper not implemented");
-    }
+        fn initMem(_: *@This(), _: *Allocator, _: *Console(config), _: *ines.RomInfo) Allocator.Error!void {
+            @panic("Mapper not implemented");
+        }
 
-    fn writePrg(_: *GenericMapper, _: u16, _: u8) void {
-        @panic("Mapper not implemented");
-    }
+        fn deinitMem(_: G, _: *Allocator) void {
+            @panic("Mapper not implemented");
+        }
 
-    fn writeChr(_: *GenericMapper, _: u16, _: u8) void {
-        @panic("Mapper not implemented");
-    }
-};
+        fn readPrg(_: G, _: u16) u8 {
+            @panic("Mapper not implemented");
+        }
 
-pub const inits: [255]MapperInitFn = blk: {
-    var types = [_]type{UnimplementedMapper} ** 255;
+        fn readChr(_: G, _: u16) u8 {
+            @panic("Mapper not implemented");
+        }
 
-    types[0] = @import("mapper/nrom.zig").Mapper;
+        fn writePrg(_: *G, _: u16, _: u8) void {
+            @panic("Mapper not implemented");
+        }
 
-    var result = [_]MapperInitFn{undefined} ** 255;
+        fn writeChr(_: *G, _: u16, _: u8) void {
+            @panic("Mapper not implemented");
+        }
+    };
+}
+
+pub fn inits(comptime config: Config) [255]MapperInitFn(config) {
+    @setEvalBranchQuota(1200);
+    var types = [_]type{UnimplementedMapper(config)} ** 255;
+
+    types[0] = @import("mapper/nrom.zig").Mapper(config);
+
+    var result = [_]MapperInitFn(config){undefined} ** 255;
     for (types) |T, i| {
-        result[i] = GenericMapper.setup(T);
+        result[i] = GenericMapper(config).setup(T);
     }
 
-    break :blk result;
-};
+    return result;
+}

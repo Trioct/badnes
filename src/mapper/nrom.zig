@@ -2,56 +2,69 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const ines = @import("../ines.zig");
-const Console = @import("../console.zig").Console;
+
+const console_ = @import("../console.zig");
+const Config = console_.Config;
+const Console = console_.Console;
 
 const GenericMapper = @import("../mapper.zig").GenericMapper;
 const Chr = @import("common.zig").Chr;
 
-pub const Mapper = struct {
-    prg: []u8,
-    chr: Chr,
+pub fn Mapper(comptime config: Config) type {
+    const G = GenericMapper(config);
+    return struct {
+        const Self = @This();
 
-    fn fromGeneric(generic: GenericMapper) *Mapper {
-        return @ptrCast(*Mapper, generic.mapper_ptr);
-    }
+        prg: []u8,
+        chr: Chr,
 
-    pub fn initMem(self: *Mapper, allocator: *Allocator, _: *Console, info: *ines.RomInfo) Allocator.Error!void {
-        if (info.prg_rom) |prg| {
-            switch (info.prg_rom_mul_16kb) {
-                1 => {
-                    self.prg = try allocator.alloc(u8, 0x8000);
-                    std.mem.copy(u8, self.prg[0..0x4000], prg[0..]);
-                    std.mem.copy(u8, self.prg[0x4000..0x8000], prg[0..]);
-                    allocator.free(prg);
-                },
-                2 => self.prg = prg,
-                else => @panic("Invalid prg pages for nrom"),
-            }
+        fn fromGeneric(generic: G) *Self {
+            return @ptrCast(*Self, generic.mapper_ptr);
         }
-        self.chr = try Chr.init(allocator, info.chr_rom);
-    }
 
-    pub fn deinitMem(generic: GenericMapper, allocator: *Allocator) void {
-        const self = Mapper.fromGeneric(generic);
-        allocator.free(self.prg);
-        self.chr.deinit(allocator);
-        allocator.destroy(self);
-    }
+        pub fn initMem(
+            self: *Self,
+            allocator: *Allocator,
+            _: *Console(config),
+            info: *ines.RomInfo,
+        ) Allocator.Error!void {
+            if (info.prg_rom) |prg| {
+                switch (info.prg_rom_mul_16kb) {
+                    1 => {
+                        self.prg = try allocator.alloc(u8, 0x8000);
+                        std.mem.copy(u8, self.prg[0..0x4000], prg[0..]);
+                        std.mem.copy(u8, self.prg[0x4000..0x8000], prg[0..]);
+                        allocator.free(prg);
+                    },
+                    2 => self.prg = prg,
+                    else => @panic("Invalid prg pages for nrom"),
+                }
+            }
+            self.chr = try Chr.init(allocator, info.chr_rom);
+        }
 
-    pub fn readPrg(generic: GenericMapper, addr: u16) u8 {
-        const self = Mapper.fromGeneric(generic);
-        return self.prg[addr & 0x7fff];
-    }
+        pub fn deinitMem(generic: G, allocator: *Allocator) void {
+            const self = Self.fromGeneric(generic);
+            allocator.free(self.prg);
+            self.chr.deinit(allocator);
+            allocator.destroy(self);
+        }
 
-    pub fn readChr(generic: GenericMapper, addr: u16) u8 {
-        const self = Mapper.fromGeneric(generic);
-        return self.chr.read(addr & 0x1fff);
-    }
+        pub fn readPrg(generic: G, addr: u16) u8 {
+            const self = Self.fromGeneric(generic);
+            return self.prg[addr & 0x7fff];
+        }
 
-    pub fn writePrg(_: *GenericMapper, _: u16, _: u8) void {}
+        pub fn readChr(generic: G, addr: u16) u8 {
+            const self = Self.fromGeneric(generic);
+            return self.chr.read(addr & 0x1fff);
+        }
 
-    pub fn writeChr(generic: *GenericMapper, addr: u16, val: u8) void {
-        const self = Mapper.fromGeneric(generic.*);
-        self.chr.write(addr, val);
-    }
-};
+        pub fn writePrg(_: *G, _: u16, _: u8) void {}
+
+        pub fn writeChr(generic: *G, addr: u16, val: u8) void {
+            const self = Self.fromGeneric(generic.*);
+            self.chr.write(addr, val);
+        }
+    };
+}
