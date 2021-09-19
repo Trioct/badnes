@@ -82,12 +82,6 @@ pub const Ppu = struct {
         latch: u1 = 0,
         next_latch: u1 = 0,
 
-        pub fn clear(self: *PatternShiftRegister) void {
-            self.bits = 0;
-            self.latch = 0;
-            self.next_latch = 0;
-        }
-
         pub fn feed(self: *AttributeShiftRegister) void {
             self.bits = (self.bits << 1) | self.latch;
         }

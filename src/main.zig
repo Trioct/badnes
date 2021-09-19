@@ -81,7 +81,7 @@ pub fn main() anyerror!void {
     console.cpu.reset();
 
     var event: sdl.c.SDL_Event = undefined;
-    var then = std.time.nanoTimestamp();
+
     var total_time: i128 = 0;
     var frames: usize = 0;
     mloop: while (true) {
@@ -98,14 +98,8 @@ pub fn main() anyerror!void {
         if (console.ppu.present_frame) {
             frames += 1;
             console.ppu.present_frame = false;
-            try video_context.frame_buffer.present(video_context.renderer);
+            total_time += try video_context.drawFrame(.{ .timing = .Timed });
 
-            var now = std.time.nanoTimestamp();
-            std.time.sleep(@intCast(u64, @maximum(0, (1 * std.time.ns_per_s) / 60 - (now - then))));
-
-            now = std.time.nanoTimestamp();
-            total_time += now - then;
-            then = now;
             if (total_time > std.time.ns_per_s) {
                 std.debug.print("FPS: {}\n", .{frames});
                 frames = 0;

@@ -3,70 +3,71 @@ const Allocator = std.mem.Allocator;
 
 const sdl = @import("bindings.zig");
 
-pub const sample_rate = 44100;
-pub const sdl_buffer_size = 512;
+pub const sample_rate = 44100 / 2;
+pub const sdl_buffer_size = 1024;
 
+// TODO: make alternative that syncs video to audio instead of
+// trying to sync audio to video
 pub const AudioContext = struct {
     device: sdl.c.SDL_AudioDeviceID,
     buffer: SampleBuffer,
 
     const SampleBuffer = struct {
-        bytes: []u8,
+        samples: []f32,
         start: usize = 0,
         index: usize,
         preferred_size: usize,
 
-        pub fn init(bytes: []u8, preferred_size: usize) SampleBuffer {
-            std.debug.assert(preferred_size < bytes.len);
+        pub fn init(samples: []f32, preferred_size: usize) SampleBuffer {
+            std.debug.assert(preferred_size < samples.len);
 
-            std.mem.set(u8, bytes[0..], 0);
+            std.mem.set(f32, samples[0..], 0);
             return SampleBuffer{
-                .bytes = bytes,
+                .samples = samples,
                 .index = preferred_size,
                 .preferred_size = preferred_size,
             };
         }
 
         pub fn convertIndex(self: SampleBuffer, index: usize) usize {
-            return (self.start + index) % self.bytes.len;
+            return (self.start + index) % self.samples.len;
         }
 
         pub fn length(self: SampleBuffer) usize {
-            return ((self.index + self.bytes.len) - self.start) % self.bytes.len;
+            return ((self.index + self.samples.len) - self.start) % self.samples.len;
         }
 
-        pub fn get(self: SampleBuffer, index: usize) u8 {
-            return self.bytes[self.convertIndex(index)];
+        pub fn get(self: SampleBuffer, index: usize) f32 {
+            return self.samples[self.convertIndex(index)];
         }
 
-        pub fn append(self: *SampleBuffer, val: u8) void {
-            self.bytes[self.index] = val;
-            self.index = (self.index + 1) % self.bytes.len;
+        pub fn append(self: *SampleBuffer, val: f32) void {
+            self.samples[self.index] = val;
+            self.index = (self.index + 1) % self.samples.len;
         }
 
         pub fn truncateStart(self: *SampleBuffer, count: usize) void {
             const prev_order = self.index > self.start;
-            self.start = (self.start + count) % self.bytes.len;
+            self.start = (self.start + count) % self.samples.len;
             if (prev_order and (self.index < self.start)) {
-                std.debug.print("bap\n", .{});
+                std.log.warn("Audio sample buffer ate its own tail", .{});
                 self.index = self.start;
             }
         }
     };
 
     pub fn alloc(allocator: *Allocator) !AudioContext {
-        const buffer = try allocator.alloc(u8, sample_rate);
+        const buffer = try allocator.alloc(f32, sample_rate);
         return AudioContext{
             .device = undefined,
-            .buffer = SampleBuffer.init(buffer, sample_rate / 4),
+            .buffer = SampleBuffer.init(buffer, (sample_rate / 6) - 1024),
         };
     }
 
     pub fn init(self: *AudioContext) !void {
         var want = sdl.c.SDL_AudioSpec{
             .freq = sample_rate,
-            //.format = sdl.c.AUDIO_U8,
-            .format = sdl.c.AUDIO_S16SYS,
+            .format = sdl.c.AUDIO_F32SYS,
             .channels = 1,
             .samples = sdl_buffer_size,
             .callback = audioCallback,
@@ -88,7 +89,7 @@ pub const AudioContext = struct {
 
     pub fn deinit(self: *AudioContext, allocator: *Allocator) void {
         sdl.closeAudioDevice(.{self.device});
-        allocator.free(self.buffer.bytes);
+        allocator.free(self.buffer.samples);
     }
 
     pub fn pause(self: AudioContext) void {
@@ -99,33 +100,46 @@ pub const AudioContext = struct {
         sdl.pauseAudioDevice(.{ self.device, 0 });
     }
 
-    pub fn addSample(self: *AudioContext, val: u8) !void {
+    pub fn addSample(self: *AudioContext, val: f32) !void {
         self.buffer.append(val);
     }
 
-    fn audioCallback(user_data: ?*c_void, raw_buffer: [*c]u8, bytes: c_int) callconv(.C) void {
+    fn audioCallback(user_data: ?*c_void, raw_buffer: [*c]u8, samples: c_int) callconv(.C) void {
         var context = @ptrCast(*AudioContext, @alignCast(@sizeOf(@TypeOf(user_data)), user_data.?));
-        //var buffer = raw_buffer[0..@intCast(usize, bytes)];
-        var buffer = @ptrCast([*]i16, @alignCast(2, raw_buffer))[0..@intCast(usize, @divExact(bytes, 2))];
+        var buffer = @ptrCast([*]f32, @alignCast(4, raw_buffer))[0..@intCast(usize, @divExact(samples, 4))];
 
         const ps = @intToFloat(f64, context.buffer.preferred_size);
         const length = @intToFloat(f64, context.buffer.length());
-        const duplicate_interval: f64 = 10 / (ps / length - 1);
-        var duplicate_counter: f64 = 0;
-        const no_duplicate = duplicate_interval <= 1;
-
-        std.debug.print("{d} {d}\n", .{ duplicate_interval, length });
+        //const copy_rate: f64 = 0.25 * (1 + length / ps);
+        //const copy_rate: f64 = 0.25 * (length / ps - 1) + 1;
+        const copy_rate: f64 = blk: {
+            const temp = (length / ps) - 1;
+            break :blk temp * temp * temp + 1;
+        };
+        //const copy_rate: f64 = (std.math.tanh(16 * (length - ps) / sample_rate) + 1) / 2;
+        var copy_rem: f64 = 0;
 
         var i: usize = 0;
-        for (buffer) |*b| {
-            b.* = @as(i16, context.buffer.get(i)) * 256;
-            duplicate_counter += 1;
-            if (!no_duplicate and duplicate_counter > duplicate_interval) {
-                duplicate_counter -= duplicate_interval;
-            } else {
-                i += 1;
+        if (copy_rate >= 1) {
+            for (buffer) |*b| {
+                b.* = context.buffer.get(i);
+
+                const inc = copy_rate + copy_rem;
+                i += @floatToInt(usize, @trunc(inc));
+                copy_rem = @mod(inc, 1);
+            }
+        } else {
+            for (buffer) |*b| {
+                b.* = context.buffer.get(i);
+
+                copy_rem += copy_rate;
+                if (copy_rem > 1) {
+                    i += 1;
+                    copy_rem -= 1;
+                }
             }
         }
+
         context.buffer.truncateStart(i);
     }
 };

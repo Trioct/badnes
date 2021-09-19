@@ -1,9 +1,15 @@
+const std = @import("std");
+const time = std.time;
+
 const sdl = @import("bindings.zig");
 
 pub const VideoContext = struct {
     window: *sdl.Window,
     renderer: *sdl.Renderer,
     frame_buffer: FrameBuffer,
+
+    last_frame_time: i128,
+    next_frame_time: i128,
 
     pub fn init(title: [:0]const u8, x: u31, y: u31, w: u31, h: u31) !VideoContext {
         const window = try sdl.createWindow(.{
@@ -17,11 +23,15 @@ pub const VideoContext = struct {
         errdefer sdl.destroyWindow(.{window});
 
         const renderer = try sdl.createRenderer(.{ window, -1, sdl.c.SDL_RENDERER_ACCELERATED });
+        const now = time.nanoTimestamp();
 
         return VideoContext{
             .window = window,
             .renderer = renderer,
             .frame_buffer = try FrameBuffer.init(renderer, 256, 240),
+
+            .last_frame_time = now,
+            .next_frame_time = now,
         };
     }
 
@@ -29,6 +39,36 @@ pub const VideoContext = struct {
         self.frame_buffer.deinit();
         sdl.destroyRenderer(.{self.renderer});
         sdl.destroyWindow(.{self.window});
+    }
+
+    pub const DrawOptions = struct {
+        timing: enum {
+            Untimed,
+            Timed,
+        },
+        framerate: usize = 60,
+    };
+
+    pub fn drawFrame(self: *VideoContext, draw_options: DrawOptions) !i128 {
+        try self.frame_buffer.present(self.renderer);
+
+        const frame_ns = time.ns_per_s / draw_options.framerate;
+        const now = time.nanoTimestamp();
+        const to_sleep = self.next_frame_time - now;
+        var passed = now - self.last_frame_time;
+
+        switch (draw_options.timing) {
+            .Untimed => {},
+            .Timed => if (to_sleep > 0) {
+                time.sleep(@intCast(u64, to_sleep));
+                passed += to_sleep;
+            },
+        }
+
+        self.next_frame_time += frame_ns;
+        self.last_frame_time += passed;
+
+        return passed;
     }
 };
 

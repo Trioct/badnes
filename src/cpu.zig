@@ -136,7 +136,8 @@ pub const Cpu = struct {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
                 0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
                 0x8000...0xffff => return self.cart.readPrg(addr & 0x7fff),
-                0x4000...0x4013 => return self.apu.read(@truncate(u4, addr)),
+                0x4000...0x4013 => return self.apu.read(@truncate(u5, addr)),
+                0x4015 => return self.apu.read(@truncate(u5, addr)),
                 0x4016 => return self.controller.getNextButton(),
                 else => {
                     //std.log.err("Unimplemented read memory address ({x:0>4})", .{addr});
@@ -154,8 +155,9 @@ pub const Cpu = struct {
             switch (addr) {
                 0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
                 0x2000...0x3fff => self.ppu.reg.write(@truncate(u3, addr), val),
-                0x4000...0x4013 => self.apu.write(@truncate(u4, addr), val),
+                0x4000...0x4013 => self.apu.write(@truncate(u5, addr), val),
                 0x4014 => @fieldParentPtr(Cpu, "mem", self).dma(val),
+                0x4015 => self.apu.write(@truncate(u5, addr), val),
                 0x4016 => if (val & 1 == 1) {
                     self.controller.strobe();
                 },
