@@ -18,11 +18,12 @@ const setMask = flags_.setMask;
 pub fn Ppu(comptime config: Config) type {
     return struct {
         const Self = @This();
+        pub const precision = config.precision;
 
         cart: *Cart(config),
         cpu: *Cpu(config),
-        reg: Registers,
-        mem: Memory,
+        reg: Registers(config),
+        mem: Memory(config),
         oam: Oam,
 
         scanline: u9 = 0,
@@ -46,242 +47,12 @@ pub fn Ppu(comptime config: Config) type {
         frame_buffer: FrameBuffer(config.method),
         present_frame: bool = false,
 
-        const BgPatternShiftRegister = struct {
-            bits: u16 = 0,
-            next_byte: u8 = 0,
-
-            pub fn feed(self: *BgPatternShiftRegister) void {
-                self.bits <<= 1;
-            }
-
-            pub fn prepare(self: *BgPatternShiftRegister, byte: u8) void {
-                self.next_byte = byte;
-            }
-
-            pub fn load(self: *BgPatternShiftRegister) void {
-                self.bits |= self.next_byte;
-                self.next_byte = 0;
-            }
-
-            pub fn get(self: BgPatternShiftRegister, offset: u3) u1 {
-                return @truncate(u1, ((self.bits << offset) & 0x8000) >> 15);
-            }
-        };
-
-        const SpritePatternShiftRegister = struct {
-            bits: u8 = 0,
-
-            pub fn feed(self: *SpritePatternShiftRegister) void {
-                self.bits <<= 1;
-            }
-
-            pub fn load(self: *SpritePatternShiftRegister, byte: u8) void {
-                self.bits = byte;
-            }
-
-            pub fn get(self: SpritePatternShiftRegister, offset: u3) u1 {
-                return @truncate(u1, ((self.bits << offset) & 0x80) >> 7);
-            }
-        };
-
-        const AttributeShiftRegister = struct {
-            bits: u8 = 0,
-            latch: u1 = 0,
-            next_latch: u1 = 0,
-
-            pub fn feed(self: *AttributeShiftRegister) void {
-                self.bits = (self.bits << 1) | self.latch;
-            }
-
-            pub fn prepare(self: *AttributeShiftRegister, bit: u1) void {
-                self.next_latch = bit;
-            }
-
-            pub fn load(self: *AttributeShiftRegister) void {
-                self.latch = self.next_latch;
-            }
-
-            pub fn get(self: AttributeShiftRegister, offset: u3) u1 {
-                return @truncate(u1, ((self.bits << offset) & 0x80) >> 7);
-            }
-        };
-
-        pub const Registers = packed struct {
-            ppu_ctrl: u8,
-            ppu_mask: u8,
-            ppu_status: u8,
-            oam_addr: u8,
-            oam_data: u8,
-            ppu_scroll: u8,
-            ppu_addr: u8,
-            ppu_data: u8,
-
-            const ff_masks = common.RegisterMasks(Registers){};
-
-            // flag functions do not have side effects even when they should
-            fn getFlag(self: Registers, comptime flags: FieldFlags) bool {
-                return ff_masks.getFlag(self, flags);
-            }
-
-            fn getFlags(self: Registers, comptime flags: FieldFlags) u8 {
-                return ff_masks.getFlags(self, flags);
-            }
-
-            fn setFlag(self: *Registers, comptime flags: FieldFlags, val: bool) void {
-                return ff_masks.setFlag(self, flags, val);
-            }
-
-            fn setFlags(self: *Registers, comptime flags: FieldFlags, val: u8) void {
-                return ff_masks.setFlags(self, flags, val);
-            }
-
-            pub fn peek(self: Registers, i: u3) u8 {
-                return @truncate(u8, (@bitCast(u64, self) >> (@as(u6, i) * 8)));
-            }
-
-            pub fn read(self: *Registers, i: u3) u8 {
-                var ppu = @fieldParentPtr(Ppu(config), "reg", self);
-                const val = self.peek(i);
-                switch (i) {
-                    2 => {
-                        ppu.reg.setFlag(.{ .field = "ppu_status", .flags = "V" }, false);
-                        ppu.write_toggle = false;
-                    },
-                    4 => {
-                        return ppu.oam.primary[self.oam_addr];
-                    },
-                    7 => {
-                        var prev = self.ppu_data;
-                        self.ppu_data = ppu.mem.read(@truncate(u14, ppu.vram_addr.value));
-                        ppu.vram_addr.value +%= if (ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
-                        return prev;
-                    },
-                    else => {},
-                }
-                return val;
-            }
-
-            pub fn write(self: *Registers, i: u3, val: u8) void {
-                var ppu = @fieldParentPtr(Ppu(config), "reg", self);
-                var val_u15 = @as(u15, val);
-                switch (i) {
-                    0 => {
-                        setMask(u15, &ppu.vram_temp.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
-                    },
-                    4 => {
-                        ppu.oam.primary[self.oam_addr] = val;
-                    },
-                    5 => if (!ppu.write_toggle) {
-                        setMask(u15, &ppu.vram_temp.value, val >> 3, 0x1f);
-                        ppu.fine_x = @truncate(u3, val);
-                        ppu.write_toggle = true;
-                    } else {
-                        setMask(
-                            u15,
-                            &ppu.vram_temp.value,
-                            ((val_u15 & 0xf8) << 2) | ((val_u15 & 7) << 12),
-                            0b111_0011_1110_0000,
-                        );
-                        ppu.write_toggle = false;
-                    },
-                    6 => if (!ppu.write_toggle) {
-                        setMask(u15, &ppu.vram_temp.value, (val_u15 & 0x3f) << 8, 0b0111_1111_0000_0000);
-                        ppu.write_toggle = true;
-                    } else {
-                        setMask(u15, &ppu.vram_temp.value, val_u15, 0xff);
-                        ppu.vram_addr.value = ppu.vram_temp.value;
-                        ppu.write_toggle = false;
-                    },
-                    7 => {
-                        ppu.mem.write(@truncate(u14, ppu.vram_addr.value), val);
-                        ppu.vram_addr.value +%= if (ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
-                    },
-                    else => {},
-                }
-                const bytes = @bitCast(u64, self.*);
-                const shift = @as(u6, i) * 8;
-                const mask = @as(u64, 0xff) << shift;
-                self.* = @bitCast(Registers, (bytes & ~mask) | @as(u64, val) << shift);
-            }
-        };
-
-        pub const Memory = struct {
-            nametables: [0x1000]u8,
-            palettes: [0x20]u8,
-
-            pub const peek = read;
-
-            pub fn read(self: Memory, addr: u14) u8 {
-                return switch (addr) {
-                    0x0000...0x1fff => @fieldParentPtr(Ppu(config), "mem", &self).cart.readChr(addr),
-                    0x2000...0x3eff => self.nametables[addr & 0xfff],
-                    0x3f00...0x3fff => if (addr & 3 == 0) self.palettes[addr & 0x0c] else self.palettes[addr & 0x1f],
-                };
-            }
-
-            pub fn write(self: *Memory, addr: u14, val: u8) void {
-                switch (addr) {
-                    0x2000...0x3eff => self.nametables[addr & 0xfff] = val,
-                    0x3f00...0x3fff => if (addr & 3 == 0) {
-                        self.palettes[addr & 0x0c] = val;
-                    } else {
-                        self.palettes[addr & 0x1f] = val;
-                    },
-                    0x0000...0x1fff => {
-                        std.log.err("Unimplemented write memory address ({x:0>4})", .{addr});
-                    },
-                }
-            }
-        };
-
-        pub const Oam = struct {
-            primary: [0x100]u8,
-            secondary: [0x20]u8,
-
-            // information needed to draw current scanline
-            sprite_pattern_srs1: [8]SpritePatternShiftRegister,
-            sprite_pattern_srs2: [8]SpritePatternShiftRegister,
-            sprite_attributes: [8]u2,
-            sprite_x_counters: [8]u8,
-            active_sprites: u8,
-            has_sprite_0: bool,
-
-            // for sprite evaluation step 2
-            temp_read_byte: u8,
-            primary_index: u8,
-            sprites_found: u8,
-            search_finished: bool,
-            next_has_sprite_0: bool,
-
-            // for sprite evaluation step 3
-            sprite_index: u8,
-
-            pub fn resetSecondaryTemps(self: *Oam) void {
-                self.primary_index = 0;
-                self.sprites_found = 0;
-                self.search_finished = false;
-                self.active_sprites = self.sprite_index;
-                self.has_sprite_0 = self.next_has_sprite_0;
-                self.next_has_sprite_0 = false;
-                self.sprite_index = 0;
-            }
-
-            pub fn readForSecondary(self: *Oam) void {
-                self.temp_read_byte = self.primary[self.primary_index];
-            }
-
-            pub fn storeSecondary(self: *Oam) void {
-                self.secondary[self.sprites_found * 4 + (self.primary_index & 3)] = self.temp_read_byte;
-                self.primary_index +%= 1;
-            }
-        };
-
         pub fn init(console: *Console(config), frame_buffer: FrameBuffer(config.method)) Self {
             return Self{
                 .cart = &console.cart,
                 .cpu = &console.cpu,
-                .reg = std.mem.zeroes(Registers),
-                .mem = std.mem.zeroes(Memory),
+                .reg = std.mem.zeroes(Registers(config)),
+                .mem = Memory(config).init(&console.cart),
                 .oam = std.mem.zeroes(Oam),
                 .frame_buffer = frame_buffer,
             };
@@ -590,3 +361,250 @@ pub fn Ppu(comptime config: Config) type {
         }
     };
 }
+
+const BgPatternShiftRegister = struct {
+    bits: u16 = 0,
+    next_byte: u8 = 0,
+
+    pub fn feed(self: *BgPatternShiftRegister) void {
+        self.bits <<= 1;
+    }
+
+    pub fn prepare(self: *BgPatternShiftRegister, byte: u8) void {
+        self.next_byte = byte;
+    }
+
+    pub fn load(self: *BgPatternShiftRegister) void {
+        self.bits |= self.next_byte;
+        self.next_byte = 0;
+    }
+
+    pub fn get(self: BgPatternShiftRegister, offset: u3) u1 {
+        return @truncate(u1, ((self.bits << offset) & 0x8000) >> 15);
+    }
+};
+
+const SpritePatternShiftRegister = struct {
+    bits: u8 = 0,
+
+    pub fn feed(self: *SpritePatternShiftRegister) void {
+        self.bits <<= 1;
+    }
+
+    pub fn load(self: *SpritePatternShiftRegister, byte: u8) void {
+        self.bits = byte;
+    }
+
+    pub fn get(self: SpritePatternShiftRegister, offset: u3) u1 {
+        return @truncate(u1, ((self.bits << offset) & 0x80) >> 7);
+    }
+};
+
+const AttributeShiftRegister = struct {
+    bits: u8 = 0,
+    latch: u1 = 0,
+    next_latch: u1 = 0,
+
+    pub fn feed(self: *AttributeShiftRegister) void {
+        self.bits = (self.bits << 1) | self.latch;
+    }
+
+    pub fn prepare(self: *AttributeShiftRegister, bit: u1) void {
+        self.next_latch = bit;
+    }
+
+    pub fn load(self: *AttributeShiftRegister) void {
+        self.latch = self.next_latch;
+    }
+
+    pub fn get(self: AttributeShiftRegister, offset: u3) u1 {
+        return @truncate(u1, ((self.bits << offset) & 0x80) >> 7);
+    }
+};
+
+pub fn Registers(comptime config: Config) type {
+    return packed struct {
+        const Self = @This();
+
+        ppu_ctrl: u8,
+        ppu_mask: u8,
+        ppu_status: u8,
+        oam_addr: u8,
+        oam_data: u8,
+        ppu_scroll: u8,
+        ppu_addr: u8,
+        ppu_data: u8,
+
+        const ff_masks = common.RegisterMasks(Self){};
+
+        // flag functions do not have side effects even when they should
+        fn getFlag(self: Self, comptime flags: FieldFlags) bool {
+            return ff_masks.getFlag(self, flags);
+        }
+
+        fn getFlags(self: Self, comptime flags: FieldFlags) u8 {
+            return ff_masks.getFlags(self, flags);
+        }
+
+        fn setFlag(self: *Self, comptime flags: FieldFlags, val: bool) void {
+            return ff_masks.setFlag(self, flags, val);
+        }
+
+        fn setFlags(self: *Self, comptime flags: FieldFlags, val: u8) void {
+            return ff_masks.setFlags(self, flags, val);
+        }
+
+        pub fn peek(self: Self, i: u3) u8 {
+            return @truncate(u8, (@bitCast(u64, self) >> (@as(u6, i) * 8)));
+        }
+
+        pub fn read(self: *Self, i: u3) u8 {
+            var ppu = @fieldParentPtr(Ppu(config), "reg", self);
+            const val = self.peek(i);
+            switch (i) {
+                2 => {
+                    ppu.reg.setFlag(.{ .field = "ppu_status", .flags = "V" }, false);
+                    ppu.write_toggle = false;
+                },
+                4 => {
+                    return ppu.oam.primary[self.oam_addr];
+                },
+                7 => {
+                    var prev = self.ppu_data;
+                    self.ppu_data = ppu.mem.read(@truncate(u14, ppu.vram_addr.value));
+                    ppu.vram_addr.value +%= if (ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    return prev;
+                },
+                else => {},
+            }
+            return val;
+        }
+
+        pub fn write(self: *Self, i: u3, val: u8) void {
+            var ppu = @fieldParentPtr(Ppu(config), "reg", self);
+            var val_u15 = @as(u15, val);
+            switch (i) {
+                0 => {
+                    setMask(u15, &ppu.vram_temp.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
+                },
+                4 => {
+                    ppu.oam.primary[self.oam_addr] = val;
+                },
+                5 => if (!ppu.write_toggle) {
+                    setMask(u15, &ppu.vram_temp.value, val >> 3, 0x1f);
+                    ppu.fine_x = @truncate(u3, val);
+                    ppu.write_toggle = true;
+                } else {
+                    setMask(
+                        u15,
+                        &ppu.vram_temp.value,
+                        ((val_u15 & 0xf8) << 2) | ((val_u15 & 7) << 12),
+                        0b111_0011_1110_0000,
+                    );
+                    ppu.write_toggle = false;
+                },
+                6 => if (!ppu.write_toggle) {
+                    setMask(u15, &ppu.vram_temp.value, (val_u15 & 0x3f) << 8, 0b0111_1111_0000_0000);
+                    ppu.write_toggle = true;
+                } else {
+                    setMask(u15, &ppu.vram_temp.value, val_u15, 0xff);
+                    ppu.vram_addr.value = ppu.vram_temp.value;
+                    ppu.write_toggle = false;
+                },
+                7 => {
+                    ppu.mem.write(@truncate(u14, ppu.vram_addr.value), val);
+                    ppu.vram_addr.value +%= if (ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                },
+                else => {},
+            }
+            const bytes = @bitCast(u64, self.*);
+            const shift = @as(u6, i) * 8;
+            const mask = @as(u64, 0xff) << shift;
+            self.* = @bitCast(Self, (bytes & ~mask) | @as(u64, val) << shift);
+        }
+    };
+}
+
+pub fn Memory(comptime config: Config) type {
+    return struct {
+        const Self = @This();
+
+        cart: *Cart(config),
+        nametables: [0x1000]u8,
+        palettes: [0x20]u8,
+
+        pub fn init(cart: *Cart(config)) Self {
+            return Self{
+                .cart = cart,
+                .nametables = std.mem.zeroes([0x1000]u8),
+                .palettes = std.mem.zeroes([0x20]u8),
+            };
+        }
+
+        pub const peek = read;
+
+        pub fn read(self: Self, addr: u14) u8 {
+            return switch (addr) {
+                0x0000...0x1fff => self.cart.readChr(addr),
+                0x2000...0x3eff => self.nametables[addr & 0xfff],
+                0x3f00...0x3fff => if (addr & 3 == 0) self.palettes[addr & 0x0c] else self.palettes[addr & 0x1f],
+            };
+        }
+
+        pub fn write(self: *Self, addr: u14, val: u8) void {
+            switch (addr) {
+                0x2000...0x3eff => self.nametables[addr & 0xfff] = val,
+                0x3f00...0x3fff => if (addr & 3 == 0) {
+                    self.palettes[addr & 0x0c] = val;
+                } else {
+                    self.palettes[addr & 0x1f] = val;
+                },
+                0x0000...0x1fff => {
+                    std.log.err("Unimplemented write memory address ({x:0>4})", .{addr});
+                },
+            }
+        }
+    };
+}
+
+pub const Oam = struct {
+    primary: [0x100]u8,
+    secondary: [0x20]u8,
+
+    // information needed to draw current scanline
+    sprite_pattern_srs1: [8]SpritePatternShiftRegister,
+    sprite_pattern_srs2: [8]SpritePatternShiftRegister,
+    sprite_attributes: [8]u2,
+    sprite_x_counters: [8]u8,
+    active_sprites: u8,
+    has_sprite_0: bool,
+
+    // for sprite evaluation step 2
+    temp_read_byte: u8,
+    primary_index: u8,
+    sprites_found: u8,
+    search_finished: bool,
+    next_has_sprite_0: bool,
+
+    // for sprite evaluation step 3
+    sprite_index: u8,
+
+    pub fn resetSecondaryTemps(self: *Oam) void {
+        self.primary_index = 0;
+        self.sprites_found = 0;
+        self.search_finished = false;
+        self.active_sprites = self.sprite_index;
+        self.has_sprite_0 = self.next_has_sprite_0;
+        self.next_has_sprite_0 = false;
+        self.sprite_index = 0;
+    }
+
+    pub fn readForSecondary(self: *Oam) void {
+        self.temp_read_byte = self.primary[self.primary_index];
+    }
+
+    pub fn storeSecondary(self: *Oam) void {
+        self.secondary[self.sprites_found * 4 + (self.primary_index & 3)] = self.temp_read_byte;
+        self.primary_index +%= 1;
+    }
+};

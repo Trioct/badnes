@@ -13,6 +13,18 @@ pub fn main() anyerror!void {
 
     var allocator = &gpa.allocator;
 
+    var args_iter = std.process.args();
+    _ = args_iter.skip();
+
+    const rom_path = blk: {
+        if (args_iter.next(allocator)) |arg| {
+            break :blk try arg;
+        } else {
+            break :blk try allocator.dupe(u8, "roms/tests/scanline.nes");
+        }
+    };
+    defer allocator.free(rom_path);
+
     try sdl.init(.{sdl.c.SDL_INIT_VIDEO | sdl.c.SDL_INIT_AUDIO | sdl.c.SDL_INIT_EVENTS});
     defer sdl.quit();
 
@@ -28,12 +40,7 @@ pub fn main() anyerror!void {
     console.init(video_context.frame_buffer, &audio_context);
     defer console.deinit(allocator);
 
-    //const rom_name = "roms/tests/nestest.nes";
-    //const rom_name = "roms/no-redist/Mario Bros. (World).nes";
-    //const rom_name = "roms/no-redist/Donkey Kong (JU).nes";
-    const rom_name = "roms/no-redist/Super Mario Bros. (World).nes";
-
-    try console.loadRom(allocator, rom_name);
+    try console.loadRom(allocator, rom_path);
     console.cpu.reset();
 
     var event: sdl.c.SDL_Event = undefined;
@@ -67,8 +74,4 @@ pub fn main() anyerror!void {
         }
         console.cpu.runInstruction();
     }
-}
-
-test {
-    std.testing.refAllDecls(@This());
 }

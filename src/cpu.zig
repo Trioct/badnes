@@ -24,165 +24,15 @@ pub fn Cpu(comptime config: Config) type {
         const Self = @This();
 
         reg: Registers,
-        mem: Memory,
+        mem: Memory(config),
         ppu: *Ppu(config),
         apu: *Apu(config),
         cycles: usize = 0,
 
-        pub const Registers = struct {
-            pc: u16,
-            s: u8,
-
-            a: u8,
-            x: u8,
-            y: u8,
-            p: u8,
-
-            const ff_masks = CreateFlags(Registers, ([_]FieldFlagsDef{
-                .{ .field = "p", .flags = "NV??DIZC" },
-            })[0..]){};
-
-            /// Convenient for testing
-            pub fn zeroes() Registers {
-                return std.mem.zeroes(Registers);
-            }
-
-            /// Real world observed values
-            pub fn startup() Registers {
-                return Registers{
-                    .pc = 0x00,
-                    .s = 0xfd,
-
-                    .a = 0x00,
-                    .x = 0x00,
-                    .y = 0x00,
-                    .p = 0x34,
-                };
-            }
-
-            pub fn getFlag(self: Registers, comptime flags: []const u8) bool {
-                return ff_masks.getFlag(self, .{ .flags = flags });
-            }
-
-            pub fn getFlags(self: Registers, comptime flags: []const u8) u8 {
-                return ff_masks.getFlags(self, .{ .flags = flags });
-            }
-
-            pub fn setFlag(self: *Registers, comptime flags: []const u8, val: bool) void {
-                return ff_masks.setFlag(self, .{ .flags = flags }, val);
-            }
-
-            pub fn setFlags(self: *Registers, comptime flags: []const u8, val: u8) void {
-                return ff_masks.setFlags(self, .{ .flags = flags }, val);
-            }
-
-            pub fn setFlagsNZ(self: *Registers, val: u8) void {
-                self.setFlags("NZ", (val & 0x80) | @as(u8, @boolToInt(val == 0)) << 1);
-            }
-
-            fn FieldType(comptime field: []const u8) type {
-                std.debug.assert(@hasField(Registers, field) or Registers.hasFlags(field));
-                if (std.mem.eql(u8, field, "pc")) {
-                    return u16;
-                } else {
-                    return u8;
-                }
-            }
-
-            pub fn get(self: Registers, comptime field: []const u8) FieldType(field) {
-                if (@hasField(Registers, field)) {
-                    return @field(self, field);
-                } else if (Registers.hasFlags(field)) {
-                    return self.getFlags(field);
-                } else {
-                    @compileError("Unknown field for registers");
-                }
-            }
-
-            pub fn set(self: *Registers, comptime field: []const u8, val: u8) void {
-                if (@hasField(Registers, field)) {
-                    @field(self, field) = val;
-                } else if (Registers.hasFlags(field)) {
-                    return self.setFlags(field, val);
-                } else {
-                    @compileError("Unknown field for registers");
-                }
-            }
-        };
-
-        pub const Memory = struct {
-            cart: *Cart(config),
-            ppu: *Ppu(config),
-            apu: *Apu(config),
-            controller: *Controller(config.method),
-            ram: [0x800]u8,
-
-            // TODO: implement non-zero pattern?
-            pub fn zeroes(
-                cart: *Cart(config),
-                ppu: *Ppu(config),
-                apu: *Apu(config),
-                controller: *Controller(config.method),
-            ) Memory {
-                return Memory{
-                    .cart = cart,
-                    .ppu = ppu,
-                    .apu = apu,
-                    .controller = controller,
-                    .ram = [_]u8{0} ** 0x800,
-                };
-            }
-
-            pub fn peek(self: Memory, addr: u16) u8 {
-                switch (addr) {
-                    0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                    0x2000...0x3fff => return self.ppu.reg.peek(@truncate(u3, addr)),
-                    0x8000...0xffff => return self.cart.peekPrg(addr & 0x7fff),
-                    else => return 0,
-                }
-            }
-
-            pub fn read(self: Memory, addr: u16) u8 {
-                switch (addr) {
-                    0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                    0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
-                    0x8000...0xffff => return self.cart.readPrg(addr & 0x7fff),
-                    0x4000...0x4013 => return self.apu.read(@truncate(u5, addr)),
-                    0x4015 => return self.apu.read(@truncate(u5, addr)),
-                    0x4016 => return self.controller.getNextButton(),
-                    else => {
-                        //std.log.err("Unimplemented read memory address ({x:0>4})", .{addr});
-                        return 0;
-                    },
-                }
-            }
-
-            pub fn readWord(self: Memory, addr: u16) u16 {
-                var low = self.read(addr);
-                return (@as(u16, self.read(addr +% 1)) << 8) | low;
-            }
-
-            pub fn write(self: *Memory, addr: u16, val: u8) void {
-                switch (addr) {
-                    0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
-                    0x2000...0x3fff => self.ppu.reg.write(@truncate(u3, addr), val),
-                    0x4000...0x4013 => self.apu.write(@truncate(u5, addr), val),
-                    0x4014 => @fieldParentPtr(Cpu(config), "mem", self).dma(val),
-                    0x4015 => self.apu.write(@truncate(u5, addr), val),
-                    0x4016 => if (val & 1 == 1) {
-                        self.controller.strobe();
-                    },
-                    else => {
-                        //std.log.err("Unimplemented write memory address ({x:0>4})", .{addr});
-                    },
-                }
-            }
-        };
-
         pub fn init(console: *Console(config)) Self {
             return Self{
                 .reg = Registers.startup(),
-                .mem = Memory.zeroes(&console.cart, &console.ppu, &console.apu, &console.controller),
+                .mem = Memory(config).zeroes(&console.cart, &console.ppu, &console.apu, &console.controller),
                 .ppu = &console.ppu,
                 .apu = &console.apu,
             };
@@ -194,7 +44,6 @@ pub fn Cpu(comptime config: Config) type {
 
         pub fn reset(self: *Self) void {
             self.reg.pc = self.mem.readWord(0xfffc);
-            //self.reg.pc = 0xc000;
             std.log.debug("PC set to {x:0>4}", .{self.reg.pc});
         }
 
@@ -210,11 +59,10 @@ pub fn Cpu(comptime config: Config) type {
             var i: usize = 0;
             while (i < 256) : (i += 1) {
                 // TODO: just to get compiling
-                // if (@TypeOf(self.ppu.*) == Ppu(.Fast)) {
-                //     self.ppu.mem.oam[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
-                // } else {
-                self.ppu.oam.primary[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
-                //}
+                switch (@TypeOf(self.ppu.*).precision) {
+                    .Fast => self.ppu.mem.oam[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i)),
+                    .Accurate => self.ppu.oam.primary[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i)),
+                }
                 self.apu.runCycle();
                 self.ppu.runCycle();
                 self.ppu.runCycle();
@@ -639,28 +487,156 @@ pub fn Cpu(comptime config: Config) type {
     };
 }
 
-const testing = std.testing;
-const video = @import("video.zig");
-const audio = @import("audio.zig");
+pub const Registers = struct {
+    pc: u16,
+    s: u8,
 
-test "NesTest.nes basic accuracy" {
-    var video_context = try video.Context(.Pure).init(testing.allocator);
-    defer video_context.deinit(testing.allocator);
+    a: u8,
+    x: u8,
+    y: u8,
+    p: u8,
 
-    var audio_context = try audio.Context(.Pure).init(testing.allocator);
-    defer audio_context.deinit(testing.allocator);
+    const ff_masks = CreateFlags(Registers, ([_]FieldFlagsDef{
+        .{ .field = "p", .flags = "NV??DIZC" },
+    })[0..]){};
 
-    var console = Console(.{ .precision = .Accurate, .method = .Pure }).alloc();
-    console.init(video_context.frame_buffer, &audio_context);
-    defer console.deinit(testing.allocator);
-
-    try console.loadRom(testing.allocator, "roms/tests/nestest.nes");
-    console.cpu.reset();
-    console.controller.holdButton("S");
-
-    while (console.cpu.cycles < 700000) {
-        console.cpu.runInstruction();
+    /// Convenient for testing
+    pub fn zeroes() Registers {
+        return std.mem.zeroes(Registers);
     }
 
-    try testing.expectEqual(@as(u8, 0x00), console.cpu.mem.peek(0x0000));
+    /// Real world observed values
+    pub fn startup() Registers {
+        return Registers{
+            .pc = 0x00,
+            .s = 0xfd,
+
+            .a = 0x00,
+            .x = 0x00,
+            .y = 0x00,
+            .p = 0x34,
+        };
+    }
+
+    pub fn getFlag(self: Registers, comptime flags: []const u8) bool {
+        return ff_masks.getFlag(self, .{ .flags = flags });
+    }
+
+    pub fn getFlags(self: Registers, comptime flags: []const u8) u8 {
+        return ff_masks.getFlags(self, .{ .flags = flags });
+    }
+
+    pub fn setFlag(self: *Registers, comptime flags: []const u8, val: bool) void {
+        return ff_masks.setFlag(self, .{ .flags = flags }, val);
+    }
+
+    pub fn setFlags(self: *Registers, comptime flags: []const u8, val: u8) void {
+        return ff_masks.setFlags(self, .{ .flags = flags }, val);
+    }
+
+    pub fn setFlagsNZ(self: *Registers, val: u8) void {
+        self.setFlags("NZ", (val & 0x80) | @as(u8, @boolToInt(val == 0)) << 1);
+    }
+
+    fn FieldType(comptime field: []const u8) type {
+        std.debug.assert(@hasField(Registers, field) or Registers.hasFlags(field));
+        if (std.mem.eql(u8, field, "pc")) {
+            return u16;
+        } else {
+            return u8;
+        }
+    }
+
+    pub fn get(self: Registers, comptime field: []const u8) FieldType(field) {
+        if (@hasField(Registers, field)) {
+            return @field(self, field);
+        } else if (Registers.hasFlags(field)) {
+            return self.getFlags(field);
+        } else {
+            @compileError("Unknown field for registers");
+        }
+    }
+
+    pub fn set(self: *Registers, comptime field: []const u8, val: u8) void {
+        if (@hasField(Registers, field)) {
+            @field(self, field) = val;
+        } else if (Registers.hasFlags(field)) {
+            return self.setFlags(field, val);
+        } else {
+            @compileError("Unknown field for registers");
+        }
+    }
+};
+
+pub fn Memory(comptime config: Config) type {
+    return struct {
+        const Self = @This();
+
+        cart: *Cart(config),
+        ppu: *Ppu(config),
+        apu: *Apu(config),
+        controller: *Controller(config.method),
+        ram: [0x800]u8,
+
+        // TODO: implement non-zero pattern?
+        pub fn zeroes(
+            cart: *Cart(config),
+            ppu: *Ppu(config),
+            apu: *Apu(config),
+            controller: *Controller(config.method),
+        ) Self {
+            return Self{
+                .cart = cart,
+                .ppu = ppu,
+                .apu = apu,
+                .controller = controller,
+                .ram = [_]u8{0} ** 0x800,
+            };
+        }
+
+        pub fn peek(self: Self, addr: u16) u8 {
+            switch (addr) {
+                0x0000...0x1fff => return self.ram[addr & 0x7ff],
+                0x2000...0x3fff => return self.ppu.reg.peek(@truncate(u3, addr)),
+                0x8000...0xffff => return self.cart.peekPrg(addr & 0x7fff),
+                else => return 0,
+            }
+        }
+
+        pub fn read(self: Self, addr: u16) u8 {
+            switch (addr) {
+                0x0000...0x1fff => return self.ram[addr & 0x7ff],
+                0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
+                0x8000...0xffff => return self.cart.readPrg(addr & 0x7fff),
+                0x4000...0x4013 => return self.apu.read(@truncate(u5, addr)),
+                0x4015 => return self.apu.read(@truncate(u5, addr)),
+                0x4016 => return self.controller.getNextButton(),
+                else => {
+                    //std.log.err("Unimplemented read memory address ({x:0>4})", .{addr});
+                    return 0;
+                },
+            }
+        }
+
+        pub fn readWord(self: Self, addr: u16) u16 {
+            var low = self.read(addr);
+            return (@as(u16, self.read(addr +% 1)) << 8) | low;
+        }
+
+        pub fn write(self: *Self, addr: u16, val: u8) void {
+            switch (addr) {
+                0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
+                0x2000...0x3fff => self.ppu.reg.write(@truncate(u3, addr), val),
+                0x4000...0x4013 => self.apu.write(@truncate(u5, addr), val),
+                0x4014 => @fieldParentPtr(Cpu(config), "mem", self).dma(val),
+                0x4015 => self.apu.write(@truncate(u5, addr), val),
+                0x4016 => if (val & 1 == 1) {
+                    self.controller.strobe();
+                },
+                else => {
+                    //std.log.err("Unimplemented write memory address ({x:0>4})", .{addr});
+                },
+            }
+        }
+    };
 }
