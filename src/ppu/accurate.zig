@@ -1,6 +1,7 @@
 const std = @import("std");
 const FrameBuffer = @import("../sdl/video.zig").FrameBuffer;
 
+const Console = @import("../console.zig").Console;
 const Cart = @import("../cart.zig").Cart;
 const Cpu = @import("../cpu.zig").Cpu;
 
@@ -269,10 +270,10 @@ pub const Ppu = struct {
         }
     };
 
-    pub fn init(cart: *Cart, cpu: *Cpu, frame_buffer: FrameBuffer) Ppu {
+    pub fn init(console: *Console, frame_buffer: FrameBuffer) Ppu {
         return Ppu{
-            .cart = cart,
-            .cpu = cpu,
+            .cart = &console.cart,
+            .cpu = &console.cpu,
             .reg = std.mem.zeroes(Registers),
             .mem = std.mem.zeroes(Memory),
             .oam = std.mem.zeroes(Oam),

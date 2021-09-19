@@ -6,7 +6,10 @@ const Op = instruction_.Op;
 const Addressing = instruction_.Addressing;
 const Instruction = instruction_.Instruction;
 
-const Precision = @import("main.zig").Precision;
+const console_ = @import("console.zig");
+const Precision = console_.Precision;
+const Console = console_.Console;
+
 const Cart = @import("cart.zig").Cart;
 const Ppu = @import("ppu.zig").Ppu;
 const Apu = @import("apu.zig").Apu;
@@ -168,12 +171,12 @@ pub const Cpu = struct {
         }
     };
 
-    pub fn init(cart: *Cart, ppu: *Ppu(.Accurate), apu: *Apu, controller: *Controller) Cpu {
+    pub fn init(console: *Console) Cpu {
         return Cpu{
             .reg = Registers.startup(),
-            .mem = Memory.zeroes(cart, ppu, apu, controller),
-            .ppu = ppu,
-            .apu = apu,
+            .mem = Memory.zeroes(&console.cart, &console.ppu, &console.apu, &console.controller),
+            .ppu = &console.ppu,
+            .apu = &console.apu,
         };
     }
 

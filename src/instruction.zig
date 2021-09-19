@@ -1,6 +1,6 @@
 const std = @import("std");
 const Cpu = @import("cpu.zig").Cpu;
-const Precision = @import("main.zig").Precision;
+const Precision = @import("console.zig").Precision;
 
 // TODO: LUT this mess
 
