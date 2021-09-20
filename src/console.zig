@@ -54,7 +54,7 @@ pub fn Console(comptime config: Config) type {
             self.cart = Cart(config).init();
             self.ppu = Ppu(config).init(self, frame_buffer);
             self.cpu = Cpu(config).init(self);
-            self.apu = Apu(config).init(audio_context);
+            self.apu = Apu(config).init(self, audio_context);
             self.controller = Controller(config.method){};
         }
 

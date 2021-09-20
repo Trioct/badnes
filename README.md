@@ -46,7 +46,7 @@ APU:
 
 - [x] Triangle channel
 - [x] Pulse channels
-- [ ] Noise channel
+- [x] Noise channel
 - [ ] DMC
 - [ ] Separate fast and accurate implementations
 

@@ -132,7 +132,7 @@ test "Parse INES 1.0" {
     try testing.expectEqual(@as(u8, 1), info.prg_rom_mul_16kb);
     try testing.expectEqual(@as(?u8, null), info.prg_ram_mul_8kb);
     try testing.expectEqual(RomInfo.ChrHeaderByte{ .Mul8Kb = 1 }, info.chr_header_byte);
-    try testing.expectEqual(RomInfo.Mirroring.Horizontal, info.mirroring);
+    try testing.expectEqual(Mirroring.Horizontal, info.mirroring);
     try testing.expectEqual(false, info.has_trainer);
     try testing.expectEqual(@as(u8, 0), info.mapper);
 }

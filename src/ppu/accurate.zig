@@ -478,6 +478,19 @@ pub fn Registers(comptime config: Config) type {
             return ff_masks.setFlags(self, flags, val);
         }
 
+        pub fn peek(self: Self, i: u3) u8 {
+            return switch (i) {
+                0 => self.ppu_ctrl,
+                1 => self.ppu_mask,
+                2 => self.ppu_status,
+                3 => self.oam_addr,
+                4 => self.oam_data,
+                5 => self.ppu_scroll,
+                6 => self.ppu_addr,
+                7 => self.ppu_data,
+            };
+        }
+
         pub fn read(self: *Self, i: u3) u8 {
             switch (i) {
                 0, 1, 3, 5, 6 => return self.io_bus,

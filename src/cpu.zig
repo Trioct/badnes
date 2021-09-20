@@ -47,6 +47,17 @@ pub fn Cpu(comptime config: Config) type {
             std.log.debug("PC set to {x:0>4}", .{self.reg.pc});
         }
 
+        pub fn irq(self: *Self) void {
+            if (self.reg.getFlag("I")) {
+                return;
+            }
+            self.pushStack(@truncate(u8, self.reg.pc >> 8));
+            self.pushStack(@truncate(u8, self.reg.pc));
+            self.pushStack(self.reg.p | 0b0010_0000);
+            self.reg.setFlag("I", true);
+            self.reg.pc = self.mem.readWord(0xfffe);
+        }
+
         pub fn nmi(self: *Self) void {
             self.pushStack(@truncate(u8, self.reg.pc >> 8));
             self.pushStack(@truncate(u8, self.reg.pc));
@@ -598,7 +609,8 @@ pub fn Memory(comptime config: Config) type {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
                 0x2000...0x3fff => return self.ppu.reg.peek(@truncate(u3, addr)),
-                0x8000...0xffff => return self.cart.peekPrg(addr & 0x7fff),
+                //0x8000...0xffff => return self.cart.peekPrg(addr & 0x7fff),
+                0x8000...0xffff => return self.cart.readPrg(addr & 0x7fff),
                 else => return 0,
             }
         }
@@ -608,8 +620,7 @@ pub fn Memory(comptime config: Config) type {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
                 0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
                 0x8000...0xffff => return self.cart.readPrg(addr & 0x7fff),
-                0x4000...0x4013 => return self.apu.read(@truncate(u5, addr)),
-                0x4015 => return self.apu.read(@truncate(u5, addr)),
+                0x4000...0x4013, 0x4015, 0x4017 => return self.apu.read(@truncate(u5, addr)),
                 0x4016 => return self.controller.getNextButton(),
                 else => {
                     //std.log.err("CPU: Unimplemented read memory address ({x:0>4})", .{addr});
@@ -627,9 +638,8 @@ pub fn Memory(comptime config: Config) type {
             switch (addr) {
                 0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
                 0x2000...0x3fff => self.ppu.reg.write(@truncate(u3, addr), val),
-                0x4000...0x4013 => self.apu.write(@truncate(u5, addr), val),
+                0x4000...0x4013, 0x4015, 0x4017 => self.apu.write(@truncate(u5, addr), val),
                 0x4014 => @fieldParentPtr(Cpu(config), "mem", self).dma(val),
-                0x4015 => self.apu.write(@truncate(u5, addr), val),
                 0x4016 => if (val & 1 == 1) {
                     self.controller.strobe();
                 },
