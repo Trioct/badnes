@@ -42,7 +42,9 @@ pub fn Cart(comptime config: Config) type {
             info.chr_rom = null;
         }
 
-        pub const peekPrg = readPrg;
+        pub fn mirrorNametable(self: Self, addr: u16) u12 {
+            return self.mapper.mirrorNametable(addr);
+        }
 
         pub fn readPrg(self: Self, addr: u16) u8 {
             return self.mapper.readPrg(addr);

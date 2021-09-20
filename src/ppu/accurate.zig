@@ -14,6 +14,7 @@ const Address = common.Address;
 const flags_ = @import("../flags.zig");
 const FieldFlags = flags_.FieldFlags;
 const setMask = flags_.setMask;
+const getMaskBool = flags_.getMaskBool;
 
 pub fn Ppu(comptime config: Config) type {
     return struct {
@@ -34,7 +35,6 @@ pub fn Ppu(comptime config: Config) type {
         vram_addr: Address = .{ .value = 0 },
         vram_temp: Address = .{ .value = 0 },
         fine_x: u3 = 0,
-        write_toggle: bool = false,
 
         current_nametable_byte: u8 = 0,
 
@@ -51,7 +51,7 @@ pub fn Ppu(comptime config: Config) type {
             return Self{
                 .cart = &console.cart,
                 .cpu = &console.cpu,
-                .reg = std.mem.zeroes(Registers(config)),
+                .reg = Registers(config).init(&console.ppu),
                 .mem = Memory(config).init(&console.cart),
                 .oam = std.mem.zeroes(Oam),
                 .frame_buffer = frame_buffer,
@@ -114,7 +114,7 @@ pub fn Ppu(comptime config: Config) type {
 
         fn fetchAttributeByte(self: *Self) void {
             const attribute_table_byte: u8 = self.mem.read(@as(u14, 0x23c0) |
-                self.vram_addr.nametableSelect() |
+                (@as(u14, self.vram_addr.nametableSelect()) << 10) |
                 ((@as(u14, self.vram_addr.coarseY()) << 1) & 0x38) |
                 ((self.vram_addr.coarseX() >> 2) & 7));
 
@@ -194,7 +194,9 @@ pub fn Ppu(comptime config: Config) type {
                 },
                 257...320 => {
                     // not exactly cycle accurate
-                    if (self.cycle & 1 != 0 or self.oam.sprite_index == self.oam.sprites_found or self.oam.sprite_index == 8) {
+                    if (self.cycle & 1 != 0 or self.oam.sprite_index == self.oam.sprites_found or
+                        self.oam.sprite_index == 8)
+                    {
                         return;
                     }
                     const y = self.oam.secondary[self.oam.sprite_index * 4];
@@ -202,7 +204,11 @@ pub fn Ppu(comptime config: Config) type {
                     const attributes = self.oam.secondary[self.oam.sprite_index * 4 + 2];
                     const x = self.oam.secondary[self.oam.sprite_index * 4 + 3];
 
-                    const y_offset = @truncate(u3, self.scanline - y);
+                    const y_offset =
+                        if (getMaskBool(u8, attributes, 0x80))
+                        @truncate(u3, ~(self.scanline - y))
+                    else
+                        @truncate(u3, self.scanline - y);
                     const pattern_offset = if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "S" }))
                         @as(u14, 0x1000)
                     else
@@ -211,7 +217,7 @@ pub fn Ppu(comptime config: Config) type {
                         0 => {},
                         1 => {
                             self.oam.sprite_x_counters[self.oam.sprite_index] = x;
-                            self.oam.sprite_attributes[self.oam.sprite_index] = @truncate(u2, attributes);
+                            self.oam.sprite_attributes[self.oam.sprite_index] = attributes;
                         },
                         2 => {
                             const pattern_byte = blk: {
@@ -250,15 +256,14 @@ pub fn Ppu(comptime config: Config) type {
                 self.cycle += 1;
             }
 
-            if (self.reg.getFlag(.{ .flags = "b" })) {
+            if (self.renderingEnabled()) {
                 self.fetchNextByte();
-            }
-            if (self.scanline != 261 and self.reg.getFlag(.{ .flags = "s" })) {
-                self.spriteEvaluation();
-            }
-
-            if (self.renderingEnabled() and self.scanline < 240 and self.cycle < 256) {
-                self.drawPixel();
+                if (self.scanline != 261) {
+                    self.spriteEvaluation();
+                }
+                if (self.scanline < 240 and self.cycle < 256) {
+                    self.drawPixel();
+                }
             }
 
             if (self.renderingEnabled() and self.cycle > 0) {
@@ -303,14 +308,18 @@ pub fn Ppu(comptime config: Config) type {
 
         fn drawPixel(self: *Self) void {
             const bg_pattern_index: u2 = blk: {
-                const p1 = self.pattern_sr1.get(self.fine_x);
-                const p2 = self.pattern_sr2.get(self.fine_x);
-                break :blk p1 | (@as(u2, p2) << 1);
+                if (self.reg.getFlag(.{ .flags = "b" })) {
+                    const p1 = self.pattern_sr1.get(self.fine_x);
+                    const p2 = self.pattern_sr2.get(self.fine_x);
+                    break :blk p1 | (@as(u2, p2) << 1);
+                } else {
+                    break :blk 0;
+                }
             };
 
-            var sprite_0 = false;
             var sprite_pattern_index: u2 = 0;
             var sprite_attribute_index: u2 = 0;
+            var sprite_behind: bool = false;
             {
                 var i: usize = 0;
                 while (i < self.oam.active_sprites) : (i += 1) {
@@ -320,9 +329,10 @@ pub fn Ppu(comptime config: Config) type {
                         const pattern_index = p1 | (@as(u2, p2) << 1);
                         if (pattern_index != 0) {
                             sprite_pattern_index = pattern_index;
-                            sprite_attribute_index = self.oam.sprite_attributes[i];
-                            if (i == 0 and self.oam.has_sprite_0) {
-                                sprite_0 = true;
+                            sprite_attribute_index = @truncate(u2, self.oam.sprite_attributes[i]);
+                            sprite_behind = getMaskBool(u8, self.oam.sprite_attributes[i], 0x20);
+                            if (i == 0 and self.oam.has_sprite_0 and bg_pattern_index != 0) {
+                                self.reg.setFlag(.{ .field = "ppu_status", .flags = "S" }, true);
                             }
                         }
                     } else if (self.oam.sprite_x_counters[i] > 0) {
@@ -336,27 +346,31 @@ pub fn Ppu(comptime config: Config) type {
                 }
             }
 
-            var pattern_index: u2 = undefined;
-            var attribute_index: u14 = undefined;
-            var palette_base: u14 = undefined;
-            if (sprite_pattern_index != 0) {
-                pattern_index = sprite_pattern_index;
-                attribute_index = sprite_attribute_index;
-                palette_base = 0x3f10;
+            const addr = blk: {
+                if (bg_pattern_index == 0 and sprite_pattern_index == 0) {
+                    break :blk 0x3f00;
+                } else {
+                    var pattern_index: u2 = undefined;
+                    var attribute_index: u14 = undefined;
+                    var palette_base: u14 = undefined;
 
-                if (bg_pattern_index != 0) {
-                    self.reg.setFlag(.{ .field = "ppu_status", .flags = "S" }, true);
+                    if (sprite_pattern_index != 0 and !(sprite_behind and bg_pattern_index != 0)) {
+                        pattern_index = sprite_pattern_index;
+                        attribute_index = sprite_attribute_index;
+                        palette_base = 0x3f10;
+                    } else {
+                        pattern_index = bg_pattern_index;
+                        const a1 = self.attribute_sr1.get(self.fine_x);
+                        const a2 = self.attribute_sr2.get(self.fine_x);
+                        attribute_index = a1 | (@as(u2, a2) << 1);
+                        palette_base = 0x3f00;
+                    }
+
+                    break :blk palette_base | (attribute_index << 2) | pattern_index;
                 }
-            } else {
-                pattern_index = bg_pattern_index;
-                const a1 = self.attribute_sr1.get(self.fine_x);
-                const a2 = self.attribute_sr2.get(self.fine_x);
-                attribute_index = a1 | (@as(u2, a2) << 1);
-                palette_base = 0x3f00;
-            }
+            };
 
-            const palette_index = (attribute_index << 2) | pattern_index;
-            const palette_byte = self.mem.read(palette_base | palette_index);
+            const palette_byte = self.mem.read(addr) & 0x3f;
             self.frame_buffer.putPixel(self.cycle, self.scanline, common.palette[palette_byte]);
         }
     };
@@ -423,19 +437,29 @@ const AttributeShiftRegister = struct {
 };
 
 pub fn Registers(comptime config: Config) type {
-    return packed struct {
+    return struct {
         const Self = @This();
 
-        ppu_ctrl: u8,
-        ppu_mask: u8,
-        ppu_status: u8,
-        oam_addr: u8,
-        oam_data: u8,
-        ppu_scroll: u8,
-        ppu_addr: u8,
-        ppu_data: u8,
+        ppu: *Ppu(config),
+
+        ppu_ctrl: u8 = 0,
+        ppu_mask: u8 = 0,
+        ppu_status: u8 = 0,
+        oam_addr: u8 = 0,
+        oam_data: u8 = 0,
+        ppu_scroll: u8 = 0,
+        ppu_addr: u8 = 0,
+        ppu_data: u8 = 0,
+
+        write_toggle: bool = false,
+        io_bus: u8 = 0,
+        vram_data_buffer: u8 = 0,
 
         const ff_masks = common.RegisterMasks(Self){};
+
+        pub fn init(ppu: *Ppu(config)) Self {
+            return Self{ .ppu = ppu };
+        }
 
         // flag functions do not have side effects even when they should
         fn getFlag(self: Self, comptime flags: FieldFlags) bool {
@@ -454,73 +478,76 @@ pub fn Registers(comptime config: Config) type {
             return ff_masks.setFlags(self, flags, val);
         }
 
-        pub fn peek(self: Self, i: u3) u8 {
-            return @truncate(u8, (@bitCast(u64, self) >> (@as(u6, i) * 8)));
-        }
-
         pub fn read(self: *Self, i: u3) u8 {
-            var ppu = @fieldParentPtr(Ppu(config), "reg", self);
-            const val = self.peek(i);
             switch (i) {
+                0, 1, 3, 5, 6 => return self.io_bus,
                 2 => {
-                    ppu.reg.setFlag(.{ .field = "ppu_status", .flags = "V" }, false);
-                    ppu.write_toggle = false;
+                    const prev = self.ppu_status;
+                    self.ppu.reg.setFlag(.{ .field = "ppu_status", .flags = "V" }, false);
+                    self.write_toggle = false;
+                    return prev | (self.io_bus & 0x1f);
                 },
                 4 => {
-                    return ppu.oam.primary[self.oam_addr];
+                    return self.ppu.oam.primary[self.oam_addr];
                 },
                 7 => {
-                    var prev = self.ppu_data;
-                    self.ppu_data = ppu.mem.read(@truncate(u14, ppu.vram_addr.value));
-                    ppu.vram_addr.value +%= if (ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
-                    return prev;
+                    const val = blk: {
+                        const mem_val = self.ppu.mem.read(@truncate(u14, self.ppu.vram_addr.value));
+                        if (self.ppu.vram_addr.value < 0x3f00) {
+                            const prev = self.vram_data_buffer;
+                            self.vram_data_buffer = mem_val;
+                            break :blk prev;
+                        } else {
+                            // TODO: not quite how it works
+                            // https://wiki.nesdev.org/w/index.php?title=PPU_registers#PPUDATA
+                            self.vram_data_buffer = mem_val;
+                            break :blk mem_val;
+                        }
+                    };
+                    self.ppu.vram_addr.value +%= if (self.ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    return val;
                 },
-                else => {},
             }
-            return val;
         }
 
         pub fn write(self: *Self, i: u3, val: u8) void {
-            var ppu = @fieldParentPtr(Ppu(config), "reg", self);
+            self.io_bus = val;
             var val_u15 = @as(u15, val);
             switch (i) {
                 0 => {
-                    setMask(u15, &ppu.vram_temp.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
+                    setMask(u15, &self.ppu.vram_temp.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
+                    self.ppu_ctrl = val;
                 },
-                4 => {
-                    ppu.oam.primary[self.oam_addr] = val;
-                },
-                5 => if (!ppu.write_toggle) {
-                    setMask(u15, &ppu.vram_temp.value, val >> 3, 0x1f);
-                    ppu.fine_x = @truncate(u3, val);
-                    ppu.write_toggle = true;
+                1 => self.ppu_mask = val,
+                2 => {},
+                3 => self.oam_addr = val,
+                4 => self.ppu.oam.primary[self.oam_addr] = val,
+                5 => if (!self.write_toggle) {
+                    setMask(u15, &self.ppu.vram_temp.value, val >> 3, 0x1f);
+                    self.ppu.fine_x = @truncate(u3, val);
+                    self.write_toggle = true;
                 } else {
                     setMask(
                         u15,
-                        &ppu.vram_temp.value,
+                        &self.ppu.vram_temp.value,
                         ((val_u15 & 0xf8) << 2) | ((val_u15 & 7) << 12),
                         0b111_0011_1110_0000,
                     );
-                    ppu.write_toggle = false;
+                    self.write_toggle = false;
                 },
-                6 => if (!ppu.write_toggle) {
-                    setMask(u15, &ppu.vram_temp.value, (val_u15 & 0x3f) << 8, 0b0111_1111_0000_0000);
-                    ppu.write_toggle = true;
+                6 => if (!self.write_toggle) {
+                    setMask(u15, &self.ppu.vram_temp.value, (val_u15 & 0x3f) << 8, 0b0111_1111_0000_0000);
+                    self.write_toggle = true;
                 } else {
-                    setMask(u15, &ppu.vram_temp.value, val_u15, 0xff);
-                    ppu.vram_addr.value = ppu.vram_temp.value;
-                    ppu.write_toggle = false;
+                    setMask(u15, &self.ppu.vram_temp.value, val_u15, 0xff);
+                    self.ppu.vram_addr.value = self.ppu.vram_temp.value;
+                    self.write_toggle = false;
                 },
                 7 => {
-                    ppu.mem.write(@truncate(u14, ppu.vram_addr.value), val);
-                    ppu.vram_addr.value +%= if (ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    self.ppu.mem.write(@truncate(u14, self.ppu.vram_addr.value), val);
+                    self.ppu.vram_addr.value +%= if (self.ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
                 },
-                else => {},
             }
-            const bytes = @bitCast(u64, self.*);
-            const shift = @as(u6, i) * 8;
-            const mask = @as(u64, 0xff) << shift;
-            self.* = @bitCast(Self, (bytes & ~mask) | @as(u64, val) << shift);
         }
     };
 }
@@ -546,21 +573,21 @@ pub fn Memory(comptime config: Config) type {
         pub fn read(self: Self, addr: u14) u8 {
             return switch (addr) {
                 0x0000...0x1fff => self.cart.readChr(addr),
-                0x2000...0x3eff => self.nametables[addr & 0xfff],
+                0x2000...0x3eff => self.nametables[self.cart.mirrorNametable(addr)],
                 0x3f00...0x3fff => if (addr & 3 == 0) self.palettes[addr & 0x0c] else self.palettes[addr & 0x1f],
             };
         }
 
         pub fn write(self: *Self, addr: u14, val: u8) void {
             switch (addr) {
-                0x2000...0x3eff => self.nametables[addr & 0xfff] = val,
+                0x2000...0x3eff => self.nametables[self.cart.mirrorNametable(addr)] = val,
                 0x3f00...0x3fff => if (addr & 3 == 0) {
                     self.palettes[addr & 0x0c] = val;
                 } else {
                     self.palettes[addr & 0x1f] = val;
                 },
                 0x0000...0x1fff => {
-                    std.log.err("Unimplemented write memory address ({x:0>4})", .{addr});
+                    std.log.err("PPU: Unimplemented write memory address ({x:0>4})", .{addr});
                 },
             }
         }
@@ -574,7 +601,7 @@ pub const Oam = struct {
     // information needed to draw current scanline
     sprite_pattern_srs1: [8]SpritePatternShiftRegister,
     sprite_pattern_srs2: [8]SpritePatternShiftRegister,
-    sprite_attributes: [8]u2,
+    sprite_attributes: [8]u8,
     sprite_x_counters: [8]u8,
     active_sprites: u8,
     has_sprite_0: bool,

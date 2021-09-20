@@ -612,7 +612,7 @@ pub fn Memory(comptime config: Config) type {
                 0x4015 => return self.apu.read(@truncate(u5, addr)),
                 0x4016 => return self.controller.getNextButton(),
                 else => {
-                    //std.log.err("Unimplemented read memory address ({x:0>4})", .{addr});
+                    //std.log.err("CPU: Unimplemented read memory address ({x:0>4})", .{addr});
                     return 0;
                 },
             }
@@ -634,7 +634,7 @@ pub fn Memory(comptime config: Config) type {
                     self.controller.strobe();
                 },
                 else => {
-                    //std.log.err("Unimplemented write memory address ({x:0>4})", .{addr});
+                    //std.log.err("CPU: Unimplemented write memory address ({x:0>4})", .{addr});
                 },
             }
         }

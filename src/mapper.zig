@@ -24,6 +24,8 @@ pub fn GenericMapper(comptime config: Config) type {
 
         mapper_ptr: OpaquePtr,
 
+        mapper_mirrorNametable: fn (Self, u16) u12,
+
         mapper_readPrg: fn (Self, u16) u8,
         mapper_readChr: fn (Self, u16) u8,
 
@@ -35,7 +37,7 @@ pub fn GenericMapper(comptime config: Config) type {
         const OpaquePtr = *align(@alignOf(usize)) opaque {};
 
         fn setup(comptime T: type) MapperInitFnSafe(Self, config) {
-            Self.validateMapper(T);
+            //Self.validateMapper(T);
             return (struct {
                 pub fn init(
                     allocator: *Allocator,
@@ -46,6 +48,8 @@ pub fn GenericMapper(comptime config: Config) type {
                     try T.initMem(ptr, allocator, console, info);
                     return Self{
                         .mapper_ptr = @ptrCast(OpaquePtr, ptr),
+
+                        .mapper_mirrorNametable = T.mirrorNametable,
 
                         .mapper_readPrg = T.readPrg,
                         .mapper_readChr = T.readChr,
@@ -61,6 +65,10 @@ pub fn GenericMapper(comptime config: Config) type {
 
         pub fn deinit(self: Self, allocator: *Allocator) void {
             self.mapper_deinit(self, allocator);
+        }
+
+        pub fn mirrorNametable(self: Self, addr: u16) u12 {
+            return self.mapper_mirrorNametable(self, addr);
         }
 
         pub fn readPrg(self: Self, addr: u16) u8 {
@@ -87,6 +95,7 @@ pub fn GenericMapper(comptime config: Config) type {
             assert(std.meta.activeTag(type_info) == @typeInfo(builtin.TypeInfo).Union.tag_type.?.Struct);
 
             const InitFn = @typeInfo(@TypeOf(@as(T, undefined).initMem)).BoundFn;
+            const MirrorNametableFn = @typeInfo(@TypeOf(@as(T, undefined).mirrorNametable)).BoundFn;
             const ReadPrgFn = @typeInfo(@TypeOf(@as(T, undefined).readPrg)).BoundFn;
             const ReadChrFn = @typeInfo(@TypeOf(@as(T, undefined).readChr)).BoundFn;
             const WritePrgFn = @typeInfo(@TypeOf(@as(T, undefined).writePrg)).BoundFn;
@@ -99,6 +108,11 @@ pub fn GenericMapper(comptime config: Config) type {
             assert(InitFn.args[2].arg_type == *Console(config));
             assert(InitFn.args[3].arg_type == *ines.RomInfo);
             assert(InitFn.return_type == Allocator.Error!void);
+
+            assert(MirrorNametableFn.args.len == 2);
+            assert(MirrorNametableFn.args[0].arg_type == Self);
+            assert(MirrorNametableFn.args[1].arg_type == u16);
+            assert(MirrorNametableFn.return_type == u12);
 
             assert(ReadPrgFn.args.len == 2);
             assert(ReadPrgFn.args[0].arg_type == Self);
@@ -130,46 +144,59 @@ pub fn GenericMapper(comptime config: Config) type {
     };
 }
 
-pub fn UnimplementedMapper(comptime config: Config) type {
+pub fn UnimplementedMapper(comptime config: Config, comptime number: u8) type {
     const G = GenericMapper(config);
+    var buf = [1]u8{undefined} ** 3;
+    buf[2] = '0' + (number % 10);
+    buf[1] = '0' + (number % 100) / 10;
+    buf[0] = '0' + number / 100;
+    const msg = "Mapper " ++ buf ++ " not implemented";
     return struct {
         dummy: u64,
 
         fn initMem(_: *@This(), _: *Allocator, _: *Console(config), _: *ines.RomInfo) Allocator.Error!void {
-            @panic("Mapper not implemented");
+            @panic(msg);
         }
 
         fn deinitMem(_: G, _: *Allocator) void {
-            @panic("Mapper not implemented");
+            @panic(msg);
+        }
+
+        fn mirrorNametable(_: G, _: u16) u12 {
+            @panic(msg);
         }
 
         fn readPrg(_: G, _: u16) u8 {
-            @panic("Mapper not implemented");
+            @panic(msg);
         }
 
         fn readChr(_: G, _: u16) u8 {
-            @panic("Mapper not implemented");
+            @panic(msg);
         }
 
         fn writePrg(_: *G, _: u16, _: u8) void {
-            @panic("Mapper not implemented");
+            @panic(msg);
         }
 
         fn writeChr(_: *G, _: u16, _: u8) void {
-            @panic("Mapper not implemented");
+            @panic(msg);
         }
     };
 }
 
 pub fn inits(comptime config: Config) [255]MapperInitFn(config) {
-    @setEvalBranchQuota(1200);
-    var types = [_]type{UnimplementedMapper(config)} ** 255;
+    @setEvalBranchQuota(2000);
+    var types = [_]?type{null} ** 255;
 
     types[0] = @import("mapper/nrom.zig").Mapper(config);
 
     var result = [_]MapperInitFn(config){undefined} ** 255;
-    for (types) |T, i| {
-        result[i] = GenericMapper(config).setup(T);
+    for (types) |To, i| {
+        if (To) |T| {
+            result[i] = GenericMapper(config).setup(T);
+        } else {
+            result[i] = GenericMapper(config).setup(UnimplementedMapper(config, i));
+        }
     }
 
     return result;

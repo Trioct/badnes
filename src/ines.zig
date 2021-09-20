@@ -14,6 +14,12 @@ pub const InesError = error{
     UnexpectedEndOfChrRom,
 };
 
+pub const Mirroring = enum {
+    Horizontal,
+    Vertical,
+    FourScreen,
+};
+
 pub const RomInfo = struct {
     prg_rom: ?[]u8,
     chr_rom: ?[]u8,
@@ -29,12 +35,6 @@ pub const RomInfo = struct {
     const ChrHeaderByte = union(enum) {
         UsesChrRam,
         Mul8Kb: u8,
-    };
-
-    const Mirroring = enum {
-        Horizontal,
-        Vertical,
-        FourScreen,
     };
 
     pub fn deinit(self: RomInfo, allocator: *Allocator) void {
@@ -75,7 +75,7 @@ pub const RomInfo = struct {
         const mirroring = blk: {
             const bit0 = flags6 & 0b01;
             const bit1 = (flags6 >> 2) & 0b10;
-            break :blk @intToEnum(RomInfo.Mirroring, bit0 | bit1);
+            break :blk @intToEnum(Mirroring, bit0 | bit1);
         };
         const has_prg_ram = (flags6 >> 1) & 1 == 1;
         const has_trainer = (flags6 >> 2) & 1 == 1;

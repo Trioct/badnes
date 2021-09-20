@@ -1,4 +1,5 @@
 const Allocator = @import("std").mem.Allocator;
+const Mirroring = @import("../ines.zig").Mirroring;
 
 pub const Chr = struct {
     bytes: []u8,
@@ -32,3 +33,11 @@ pub const Chr = struct {
         }
     }
 };
+
+pub fn mirrorNametable(mirroring: Mirroring, addr: u16) u12 {
+    return switch (mirroring) {
+        .Horizontal => @truncate(u12, addr & 0xbff),
+        .Vertical => @truncate(u12, addr & 0x7ff),
+        .FourScreen => @truncate(u12, addr),
+    };
+}

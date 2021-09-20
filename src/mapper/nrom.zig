@@ -8,7 +8,7 @@ const Config = console_.Config;
 const Console = console_.Console;
 
 const GenericMapper = @import("../mapper.zig").GenericMapper;
-const Chr = @import("common.zig").Chr;
+const common = @import("common.zig");
 
 pub fn Mapper(comptime config: Config) type {
     const G = GenericMapper(config);
@@ -16,7 +16,8 @@ pub fn Mapper(comptime config: Config) type {
         const Self = @This();
 
         prg: []u8,
-        chr: Chr,
+        chr: common.Chr,
+        mirroring: ines.Mirroring,
 
         fn fromGeneric(generic: G) *Self {
             return @ptrCast(*Self, generic.mapper_ptr);
@@ -40,7 +41,8 @@ pub fn Mapper(comptime config: Config) type {
                     else => @panic("Invalid prg pages for nrom"),
                 }
             }
-            self.chr = try Chr.init(allocator, info.chr_rom);
+            self.chr = try common.Chr.init(allocator, info.chr_rom);
+            self.mirroring = info.mirroring;
         }
 
         pub fn deinitMem(generic: G, allocator: *Allocator) void {
@@ -50,6 +52,11 @@ pub fn Mapper(comptime config: Config) type {
             allocator.destroy(self);
         }
 
+        pub fn mirrorNametable(generic: G, addr: u16) u12 {
+            const self = Self.fromGeneric(generic);
+            return common.mirrorNametable(self.mirroring, addr);
+        }
+
         pub fn readPrg(generic: G, addr: u16) u8 {
             const self = Self.fromGeneric(generic);
             return self.prg[addr & 0x7fff];
@@ -57,7 +64,7 @@ pub fn Mapper(comptime config: Config) type {
 
         pub fn readChr(generic: G, addr: u16) u8 {
             const self = Self.fromGeneric(generic);
-            return self.chr.read(addr & 0x1fff);
+            return self.chr.read(addr);
         }
 
         pub fn writePrg(_: *G, _: u16, _: u8) void {}
