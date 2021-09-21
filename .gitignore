@@ -12,6 +12,7 @@
 
 zig-cache/
 zig-out/
+roms/
 /release/
 /debug/
 /build/
