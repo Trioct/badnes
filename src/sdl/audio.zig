@@ -9,6 +9,8 @@ pub const Context = struct {
     device: sdl.c.SDL_AudioDeviceID,
     buffer: SampleBuffer,
 
+    previous_sample: f32 = 0,
+
     pub const sample_rate = 44100 / 2;
     pub const sdl_buffer_size = 1024;
 
@@ -101,7 +103,17 @@ pub const Context = struct {
     }
 
     pub fn addSample(self: *Context, val: f32) !void {
-        self.buffer.append(val);
+        const pi = std.math.pi;
+        const high_pass1_a = (90 * pi) / (Context.sample_rate + 90 * pi);
+        const high_pass2_a = (440 * pi) / (Context.sample_rate + 440 * pi);
+        const low_pass_a = (14000 * pi) / (Context.sample_rate + 14000 * pi);
+
+        const high_pass1 = high_pass1_a * val + (1 - high_pass1_a) * self.previous_sample;
+        const high_pass2 = high_pass2_a * val + (1 - high_pass2_a) * high_pass1;
+        const low_pass = low_pass_a * val + (1 - low_pass_a) * high_pass2;
+
+        self.buffer.append(low_pass);
+        self.previous_sample = low_pass;
     }
 
     fn audioCallback(user_data: ?*c_void, raw_buffer: [*c]u8, samples: c_int) callconv(.C) void {

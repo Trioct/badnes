@@ -510,7 +510,9 @@ const TriangleChannel = struct {
     }
 
     fn output(self: TriangleChannel) u4 {
-        if (self.gateLinearCounter() and self.length_counter.gate()) {
+        // timer period isn't a real gate but it seems like maybe my sdl audio impl isn't right
+        // TODO: figure out why triangle makes high pitch noise even with low pass filter
+        if (self.gateLinearCounter() and self.length_counter.gate() and self.timer.period > 2) {
             return triangle_duty_values[self.duty_index];
         }
         return 0;
