@@ -21,7 +21,7 @@ Mappers:
 
 - [ ] SRAM
 - [x] NROM / Mapper 000
-- [ ] MMC1 / Mapper 001
+- [x] MMC1 / Mapper 001
 - [ ] UxROM / Mapper 002
 - [ ] CNROM / Mapper 003
 - [ ] MMC3 / Mapper 004

@@ -79,12 +79,12 @@ pub fn GenericMapper(comptime config: Config) type {
             return self.mapper_readChr(self, addr);
         }
 
-        pub fn writePrg(self: *Self, addr: u16) void {
-            self.mapper_writePrg(self, addr);
+        pub fn writePrg(self: *Self, addr: u16, val: u8) void {
+            self.mapper_writePrg(self, addr, val);
         }
 
-        pub fn writeChr(self: *Self, addr: u16) void {
-            self.mapper_writeChr(self, addr);
+        pub fn writeChr(self: *Self, addr: u16, val: u8) void {
+            self.mapper_writeChr(self, addr, val);
         }
 
         // I really don't need this because the type system will *probably* take care of it for me,
@@ -189,6 +189,7 @@ pub fn inits(comptime config: Config) [255]MapperInitFn(config) {
     var types = [_]?type{null} ** 255;
 
     types[0] = @import("mapper/nrom.zig").Mapper(config);
+    types[1] = @import("mapper/mmc1.zig").Mapper(config);
 
     var result = [_]MapperInitFn(config){undefined} ** 255;
     for (types) |To, i| {

@@ -171,9 +171,10 @@ pub fn Ppu(comptime config: Config) type {
                         self.oam.readForSecondary();
                         return;
                     } else if (self.oam.primary_index & 3 == 0) {
+                        const sprite_height = if (self.reg.getFlag(.{ .flags = "H" })) @as(u5, 16) else 8;
                         // check if y is in range
                         const sprite_y = self.oam.temp_read_byte;
-                        if (sprite_y <= self.scanline and @as(u9, sprite_y) + 8 > self.scanline) {
+                        if (sprite_y <= self.scanline and @as(u9, sprite_y) + sprite_height > self.scanline) {
                             if (self.oam.primary_index == 0) {
                                 self.oam.next_has_sprite_0 = true;
                             }
@@ -204,15 +205,30 @@ pub fn Ppu(comptime config: Config) type {
                     const attributes = self.oam.secondary[self.oam.sprite_index * 4 + 2];
                     const x = self.oam.secondary[self.oam.sprite_index * 4 + 3];
 
-                    const y_offset =
+                    const y_offset_16 =
                         if (getMaskBool(u8, attributes, 0x80))
-                        @truncate(u3, ~(self.scanline - y))
+                        @truncate(u4, ~(self.scanline - y))
                     else
-                        @truncate(u3, self.scanline - y);
-                    const pattern_offset = if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "S" }))
-                        @as(u14, 0x1000)
-                    else
-                        0;
+                        @truncate(u4, self.scanline - y);
+                    const y_offset = @truncate(u3, y_offset_16);
+
+                    const tile_offset = @as(u14, tile_index) << 4;
+                    const pattern_offset = blk: {
+                        if (self.reg.getFlag(.{ .flags = "H" })) {
+                            const bank = @as(u14, tile_index & 1) << 12;
+                            const tile_offset_16 = tile_offset & ~@as(u14, 0x10);
+
+                            if (y_offset_16 < 8) {
+                                break :blk bank | tile_offset_16;
+                            } else {
+                                break :blk bank | tile_offset_16 | 0x10;
+                            }
+                        } else if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "S" })) {
+                            break :blk 0x1000 | tile_offset;
+                        } else {
+                            break :blk tile_offset;
+                        }
+                    };
                     switch (@truncate(u2, self.cycle >> 1)) {
                         0 => {},
                         1 => {
@@ -221,7 +237,7 @@ pub fn Ppu(comptime config: Config) type {
                         },
                         2 => {
                             const pattern_byte = blk: {
-                                var byte = self.mem.read(pattern_offset | (@as(u14, tile_index) << 4) | y_offset);
+                                var byte = self.mem.read(pattern_offset | y_offset);
                                 if (attributes & 0x40 != 0) {
                                     byte = @bitReverse(u8, byte);
                                 }
@@ -231,7 +247,7 @@ pub fn Ppu(comptime config: Config) type {
                         },
                         3 => {
                             const pattern_byte = blk: {
-                                var byte = self.mem.read(pattern_offset | (@as(u14, tile_index) << 4) | y_offset | 8);
+                                var byte = self.mem.read(pattern_offset | y_offset | 8);
                                 if (attributes & 0x40 != 0) {
                                     byte = @bitReverse(u8, byte);
                                 }
@@ -593,14 +609,12 @@ pub fn Memory(comptime config: Config) type {
 
         pub fn write(self: *Self, addr: u14, val: u8) void {
             switch (addr) {
+                0x0000...0x1fff => self.cart.writeChr(addr, val),
                 0x2000...0x3eff => self.nametables[self.cart.mirrorNametable(addr)] = val,
                 0x3f00...0x3fff => if (addr & 3 == 0) {
                     self.palettes[addr & 0x0c] = val;
                 } else {
                     self.palettes[addr & 0x1f] = val;
-                },
-                0x0000...0x1fff => {
-                    std.log.err("PPU: Unimplemented write memory address ({x:0>4})", .{addr});
                 },
             }
         }

@@ -40,29 +40,31 @@ pub fn Cart(comptime config: Config) type {
             self.mapper = try inits[info.mapper](allocator, console, info);
             info.prg_rom = null;
             info.chr_rom = null;
+
+            std.log.info("Using mapper {:0>3}", .{info.mapper});
         }
 
-        pub fn mirrorNametable(self: Self, addr: u16) u12 {
+        pub inline fn mirrorNametable(self: Self, addr: u16) u12 {
             return self.mapper.mirrorNametable(addr);
         }
 
-        pub fn readPrg(self: Self, addr: u16) u8 {
+        pub const peekPrg = readPrg;
+
+        pub inline fn readPrg(self: Self, addr: u16) u8 {
             return self.mapper.readPrg(addr);
         }
 
-        pub fn writePrg(self: *Self, addr: u16, val: u8) void {
-            _ = self;
-            _ = addr;
-            _ = val;
+        pub inline fn writePrg(self: *Self, addr: u16, val: u8) void {
+            self.mapper.writePrg(addr, val);
         }
 
         pub const peekChr = readChr;
 
-        pub fn readChr(self: Self, addr: u16) u8 {
+        pub inline fn readChr(self: Self, addr: u16) u8 {
             return self.mapper.readChr(addr);
         }
 
-        pub fn writeChr(self: *Self, addr: u16, val: u8) void {
+        pub inline fn writeChr(self: *Self, addr: u16, val: u8) void {
             return self.mapper.writeChr(addr, val);
         }
     };
