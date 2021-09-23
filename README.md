@@ -33,7 +33,7 @@ CPU:
 
 - [x] Accurate documented instructions
 - [ ] Undocumented instructions
-- [ ] Separate fast and accurate implementations
+- [x] Separate fast and accurate implementations
 
 PPU:
 

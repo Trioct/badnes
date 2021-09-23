@@ -46,13 +46,14 @@ pub const Context = struct {
             Untimed,
             Timed,
         },
-        framerate: usize = 60,
+        // ~1/60
+        frametime: f32 = (4 * (261 * 341 + 340.5)) / 21477272.0,
     };
 
     pub fn drawFrame(self: *Context, draw_options: DrawOptions) !i128 {
         try self.frame_buffer.present(self.renderer);
 
-        const frame_ns = time.ns_per_s / draw_options.framerate;
+        const frame_ns = @floatToInt(i128, time.ns_per_s * draw_options.frametime);
         const now = time.nanoTimestamp();
         const to_sleep = self.next_frame_time - now;
         var passed = now - self.last_frame_time;

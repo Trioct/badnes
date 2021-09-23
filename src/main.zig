@@ -20,7 +20,7 @@ pub fn main() anyerror!void {
         if (args_iter.next(allocator)) |arg| {
             break :blk try arg;
         } else {
-            break :blk try allocator.dupe(u8, "roms/tests/scanline.nes");
+            break :blk try allocator.dupe(u8, "roms/tests/nestest.nes");
         }
     };
     defer allocator.free(rom_path);
