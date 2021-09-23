@@ -1,7 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Console = @import("console.zig").Console;
+const console_ = @import("console.zig");
+const Console = console_.Console;
+const Precision = console_.Precision;
 
 const sdl = @import("sdl/bindings.zig");
 const video = @import("video.zig");
@@ -36,7 +38,8 @@ pub fn main() anyerror!void {
     try audio_context.init();
     defer audio_context.deinit(allocator);
 
-    var console = Console(.{ .precision = .Accurate, .method = .Sdl }).alloc();
+    const precision = Precision.Accurate;
+    var console = Console(.{ .precision = precision, .method = .Sdl }).alloc();
     console.init(video_context.frame_buffer, &audio_context);
     defer console.deinit(allocator);
 
@@ -72,6 +75,20 @@ pub fn main() anyerror!void {
                 audio_context.unpause();
             }
         }
-        console.cpu.runInstruction();
+
+        // Batch run instructions/cycles to not get bogged down by sdl.pollEvent
+        var i: usize = 0;
+        switch (precision) {
+            .Fast => {
+                while (i < 250) : (i += 1) {
+                    console.cpu.runInstruction();
+                }
+            },
+            .Accurate => {
+                while (i < 1000) : (i += 1) {
+                    console.cpu.runCycle();
+                }
+            },
+        }
     }
 }
