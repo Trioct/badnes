@@ -30,7 +30,9 @@ pub fn Cpu(comptime config: Config) type {
         ppu: *Ppu(config),
         apu: *Apu(config),
 
-        interrupt: ?Interrupt = null,
+        irq_pin: IrqSource = std.mem.zeroes(IrqSource),
+        nmi_pin: bool = false,
+
         interrupt_acknowledged: bool = false,
         interrupt_at_check: Interrupt = undefined,
 
@@ -43,8 +45,17 @@ pub fn Cpu(comptime config: Config) type {
             .access = .Read,
         },
 
+        pub const IrqSource = packed struct {
+            Brk: bool,
+            ApuFrameCounter: bool,
+            padding: u6,
+
+            pub fn value(self: IrqSource) u8 {
+                return @bitCast(u8, self);
+            }
+        };
+
         pub const Interrupt = enum {
-            Brk,
             Irq,
             Nmi,
         };
@@ -80,18 +91,16 @@ pub fn Cpu(comptime config: Config) type {
             std.log.debug("PC set to {x:0>4}", .{self.reg.pc});
         }
 
-        pub fn brk(self: *Self) void {
-            self.interrupt = .Brk;
+        pub fn setIrqSource(self: *Self, comptime source: []const u8) void {
+            @field(self.irq_pin, source) = true;
         }
 
-        pub fn irq(self: *Self) void {
-            if (!self.reg.getFlag("I")) {
-                self.interrupt = .Irq;
-            }
+        pub fn clearIrqSource(self: *Self, comptime source: []const u8) void {
+            @field(self.irq_pin, source) = false;
         }
 
-        pub fn nmi(self: *Self) void {
-            self.interrupt = .Nmi;
+        pub fn setNmi(self: *Self) void {
+            self.nmi_pin = true;
         }
 
         fn dma(self: *Self, addr_high: u8) void {
@@ -181,7 +190,7 @@ pub fn Cpu(comptime config: Config) type {
         }
 
         fn pollInterrupt(self: *Self) bool {
-            if (self.interrupt != null) {
+            if (self.nmi_pin or (!self.reg.getFlag("I") and self.irq_pin.value() != 0)) {
                 self.state.cycle = 0;
                 self.interrupt_acknowledged = true;
                 return true;
@@ -200,15 +209,20 @@ pub fn Cpu(comptime config: Config) type {
                 2 => self.pushStack(@truncate(u8, self.reg.pc >> 8)),
                 3 => self.pushStack(@truncate(u8, self.reg.pc)),
                 4 => {
-                    self.interrupt_at_check = self.interrupt.?;
-                    self.interrupt = null;
-
-                    const brk_flag = if (self.interrupt_at_check == .Brk) @as(u8, 0x10) else 0;
+                    const brk_flag = if (self.irq_pin.Brk) @as(u8, 0x10) else 0;
                     self.pushStack(self.reg.p | 0b0010_0000 | brk_flag);
+
+                    if (self.nmi_pin) {
+                        self.interrupt_at_check = .Nmi;
+                        self.nmi_pin = false;
+                    } else {
+                        self.interrupt_at_check = .Irq;
+                        self.irq_pin.Brk = false;
+                    }
                 },
                 5 => {
                     const addr: u16 = switch (self.interrupt_at_check) {
-                        .Brk, .Irq => 0xfffe,
+                        .Irq => 0xfffe,
                         .Nmi => 0xfffa,
                     };
                     const low = self.mem.read(addr);
@@ -217,7 +231,7 @@ pub fn Cpu(comptime config: Config) type {
                 },
                 6 => {
                     const addr: u16 = switch (self.interrupt_at_check) {
-                        .Brk, .Irq => 0xffff,
+                        .Irq => 0xffff,
                         .Nmi => 0xfffb,
                     };
                     const high: u16 = self.mem.read(addr);
@@ -230,8 +244,7 @@ pub fn Cpu(comptime config: Config) type {
             }
         }
 
-        fn runCycle0(self: *Self) void {
-            const opcode = self.fetchNextByte();
+        fn setStateFromOpcode(self: *Self, opcode: u8) void {
             const instruction = Instruction(.Accurate).decode(opcode);
 
             self.state.opcode = opcode;
@@ -240,11 +253,16 @@ pub fn Cpu(comptime config: Config) type {
             self.state.access = instruction.access;
         }
 
+        fn runCycle0(self: *Self) void {
+            const opcode = self.fetchNextByte();
+            self.setStateFromOpcode(opcode);
+        }
+
         fn runCycle1(self: *Self) void {
             switch (self.state.addressing) {
                 .Special => self.runCycle1Special(),
-                .Absolute, .AbsoluteX, .AbsoluteY, .Relative => _ = self.fetchNextByte(),
-                .IndirectX, .IndirectY => self.state.c_byte = self.fetchNextByte(),
+                .Absolute, .AbsoluteX, .AbsoluteY => _ = self.fetchNextByte(),
+                .IndirectX, .IndirectY, .Relative => self.state.c_byte = self.fetchNextByte(),
                 .Implied => self.runCycle1Implied(),
                 .Immediate => self.runCycle1Immediate(),
                 .ZeroPage, .ZeroPageX, .ZeroPageY => self.state.c_addr = self.fetchNextByte(),
@@ -369,8 +387,8 @@ pub fn Cpu(comptime config: Config) type {
         fn runCycle2Special(self: *Self) void {
             switch (self.state.op) {
                 .OpBrk => {
-                    self.brk();
-                    _ = self.pollInterrupt();
+                    self.setIrqSource("Brk");
+                    self.interrupt_acknowledged = true;
                     self.state.cycle = 2;
                 },
                 .OpJmp => switch (self.state.opcode) {
@@ -420,7 +438,6 @@ pub fn Cpu(comptime config: Config) type {
         }
 
         fn runCycle2Relative(self: *Self) void {
-            const rel = self.mem.open_bus;
             self.readNextByte();
 
             const cond = switch (self.state.op) {
@@ -436,11 +453,14 @@ pub fn Cpu(comptime config: Config) type {
                 else => unreachable,
             };
             if (cond) {
-                const new = @bitCast(u16, @bitCast(i16, self.reg.pc) +% @bitCast(i8, rel));
+                const new = @bitCast(u16, @bitCast(i16, self.reg.pc) +% @bitCast(i8, self.state.c_byte));
                 flags.setMask(u16, &self.reg.pc, new, 0xff);
                 self.state.c_addr = new;
             } else {
-                self.finishInstruction();
+                self.reg.pc +%= 1;
+                self.state.cycle = 0;
+                const opcode = self.mem.open_bus;
+                self.setStateFromOpcode(opcode);
             }
         }
 
@@ -499,7 +519,10 @@ pub fn Cpu(comptime config: Config) type {
             if (self.reg.pc != self.state.c_addr) {
                 self.reg.pc = self.state.c_addr;
             } else {
-                self.finishInstruction();
+                self.reg.pc +%= 1;
+                self.state.cycle = 0;
+                const opcode = self.mem.open_bus;
+                self.setStateFromOpcode(opcode);
             }
         }
 
@@ -542,8 +565,9 @@ pub fn Cpu(comptime config: Config) type {
         }
 
         fn runCycle4Relative(self: *Self) void {
-            self.readNextByte();
-            self.finishInstruction();
+            self.state.cycle = 0;
+            const opcode = self.fetchNextByte();
+            self.setStateFromOpcode(opcode);
         }
 
         fn runCycle5Special(self: *Self) void {
@@ -742,8 +766,9 @@ pub fn Cpu(comptime config: Config) type {
             const op_str = opToString(self.state.op);
 
             const cycle = if (self.state.cycle == 15) -1 else @intCast(i5, self.state.cycle);
-            std.log.debug("Cycle {: >2}: {s}; PC: ${x:0>4}; Bus: ${x:0>2}; " ++
+            std.log.debug("Ct: {}; C: {: >2}; {s}; PC: ${x:0>4}; Bus: ${x:0>2}; " ++
                 "A: ${x:0>2}; X: ${x:0>2}; Y: ${x:0>2}; P: %{b:0>8}; S: ${x:0>2}", .{
+                self.cycles,
                 cycle,
                 op_str,
                 self.reg.pc,

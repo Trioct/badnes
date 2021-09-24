@@ -44,7 +44,7 @@ pub fn Cpu(comptime config: Config) type {
             std.log.debug("PC set to {x:0>4}", .{self.reg.pc});
         }
 
-        pub fn irq(self: *Self) void {
+        pub fn setIrqSource(self: *Self, comptime _: []const u8) void {
             if (self.reg.getFlag("I")) {
                 return;
             }
@@ -55,7 +55,9 @@ pub fn Cpu(comptime config: Config) type {
             self.reg.pc = self.mem.readWord(0xfffe);
         }
 
-        pub fn nmi(self: *Self) void {
+        pub fn clearIrqSource(_: *Self, comptime _: []const u8) void {}
+
+        pub fn setNmi(self: *Self) void {
             self.pushStack(@truncate(u8, self.reg.pc >> 8));
             self.pushStack(@truncate(u8, self.reg.pc));
             self.pushStack(self.reg.p | 0b0010_0000);

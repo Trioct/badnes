@@ -80,12 +80,12 @@ pub fn main() anyerror!void {
         var i: usize = 0;
         switch (precision) {
             .Fast => {
-                while (i < 250) : (i += 1) {
+                while (i < 2000) : (i += 1) {
                     console.cpu.runInstruction();
                 }
             },
             .Accurate => {
-                while (i < 1000) : (i += 1) {
+                while (i < 5000) : (i += 1) {
                     console.cpu.runCycle();
                 }
             },

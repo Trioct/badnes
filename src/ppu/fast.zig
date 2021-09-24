@@ -116,7 +116,7 @@ pub fn Ppu(comptime config: Config) type {
             if (self.scanline == 241 and self.cycle == 1) {
                 self.reg.setFlag(.{ .field = "ppu_status", .flags = "V" }, true);
                 if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "V" })) {
-                    self.cpu.nmi();
+                    self.cpu.setNmi();
                 }
                 self.present_frame = true;
             } else if (self.scanline == 261 and self.cycle == 1) {

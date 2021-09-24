@@ -7,6 +7,8 @@ const console_ = @import("../console.zig");
 const Config = console_.Config;
 const Console = console_.Console;
 
+const Cpu = @import("../cpu.zig").Cpu;
+
 const GenericMapper = @import("../mapper.zig").GenericMapper;
 const common = @import("common.zig");
 
@@ -17,6 +19,8 @@ pub fn Mapper(comptime config: Config) type {
     return struct {
         const Self = @This();
 
+        cpu: *Cpu(config),
+
         prgs: common.Prgs,
         chrs: common.Chrs,
         mirroring: enum(u2) {
@@ -26,6 +30,7 @@ pub fn Mapper(comptime config: Config) type {
             Horizontal,
         },
 
+        last_write_cycle: usize,
         shift_register: u4,
         write_count: u3,
 
@@ -43,13 +48,16 @@ pub fn Mapper(comptime config: Config) type {
         pub fn initMem(
             self: *Self,
             allocator: *Allocator,
-            _: *Console(config),
+            console: *Console(config),
             info: *ines.RomInfo,
         ) Allocator.Error!void {
+            self.cpu = &console.cpu;
+
             self.prgs = try common.Prgs.init(allocator, info.prg_rom);
             self.chrs = try common.Chrs.init(allocator, info.chr_rom);
             self.mirroring = @intToEnum(@TypeOf(self.mirroring), @enumToInt(info.mirroring));
 
+            self.last_write_cycle = 0;
             self.shift_register = 0;
             self.write_count = 0;
 
@@ -104,6 +112,12 @@ pub fn Mapper(comptime config: Config) type {
 
         pub fn writePrg(generic: *G, addr: u16, val: u8) void {
             const self = common.fromGeneric(Self, config, generic.*);
+
+            const temp = self.last_write_cycle;
+            self.last_write_cycle = self.cpu.cycles;
+            if (self.cpu.cycles == temp + 1) {
+                return;
+            }
 
             if (flags.getMaskBool(u8, val, 0x80)) {
                 self.shift_register = 0;

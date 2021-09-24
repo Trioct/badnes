@@ -36,7 +36,7 @@ pub fn BankSwitcher(comptime size: usize) type {
             } else {
                 return Self{
                     .bytes = try allocator.alloc(u8, size * 2),
-                    .writeable = false,
+                    .writeable = true,
                     .selected = [2]usize{ 0, size },
                 };
             }

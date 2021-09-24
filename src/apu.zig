@@ -39,30 +39,47 @@ pub fn Apu(comptime config: Config) type {
         frame_counter: usize = 0,
         audio_context: *audio.Context(config.method),
 
-        next_frame_counter_timer: CycleTimer = CycleTimer.set(0),
-        next_output_timer: CycleTimer = CycleTimer.set(0),
+        frame_counter_timer: CycleTimer = blk: {
+            var timer = CycleTimer.init(@intToFloat(f32, cpu_freq) * frame_counter_rate);
+            timer.setNext();
+            break :blk timer;
+        },
+
+        output_timer: CycleTimer = blk: {
+            const freq_f = @intToFloat(f32, cpu_freq);
+            const sample_f = @intToFloat(f32, audio.Context(config.method).sample_rate);
+
+            var timer = CycleTimer.init(freq_f / sample_f);
+            timer.setNext();
+
+            break :blk timer;
+        },
 
         const CycleTimer = struct {
+            period: f32,
             whole: usize,
             frac: f32,
 
-            fn init() CycleTimer {
-                return CycleTimer.set(0);
-            }
-
-            fn set(cycle: usize) CycleTimer {
+            fn init(period: f32) CycleTimer {
                 return CycleTimer{
-                    .whole = cycle,
+                    .period = period,
+                    .whole = 0,
                     .frac = 0,
                 };
             }
 
-            fn setNext(self: *CycleTimer, offset: f32) void {
-                self.frac += offset;
+            fn setNext(self: *CycleTimer) void {
+                self.frac += self.period;
 
                 const mod = std.math.modf(self.frac);
                 self.frac -= mod.ipart;
                 self.whole += @floatToInt(usize, mod.ipart);
+            }
+
+            fn setNextFrom(self: *CycleTimer, cycle: usize) void {
+                self.whole = cycle;
+                self.frac = 0;
+                self.setNext();
             }
 
             fn isDone(self: CycleTimer, cycle: usize) bool {
@@ -110,6 +127,7 @@ pub fn Apu(comptime config: Config) type {
                     val |= @boolToInt(reg.pulse1.length_counter.value > 0);
 
                     reg.irq_inhibit = false;
+                    self.cpu.clearIrqSource("ApuFrameCounter");
 
                     return val;
                 },
@@ -165,8 +183,20 @@ pub fn Apu(comptime config: Config) type {
                     reg.pulse1.length_counter.setEnabled(flags.getMaskBool(u8, val, 0x01));
                 },
                 0x17 => {
+                    // TODO: not sure if accurate
                     reg.frame_counter_mode = @truncate(u1, val >> 7);
                     reg.irq_inhibit = flags.getMaskBool(u8, val, 0x40);
+
+                    if (reg.irq_inhibit) {
+                        self.cpu.clearIrqSource("ApuFrameCounter");
+                    }
+
+                    self.frame_counter_timer.setNextFrom(self.cycles);
+                    self.frame_counter = 0;
+                    if (reg.frame_counter_mode == 1) {
+                        self.stepQuarterFrame();
+                        self.stepHalfFrame();
+                    }
                 },
                 else => {},
             }
@@ -209,7 +239,7 @@ pub fn Apu(comptime config: Config) type {
                 self.reg.noise.stepTimer();
             }
 
-            if (self.next_frame_counter_timer.isDone(self.cycles)) {
+            if (self.frame_counter_timer.isDone(self.cycles)) {
                 if (self.reg.frame_counter_mode == 0) {
                     switch (@truncate(u2, self.frame_counter)) {
                         0, 2 => {
@@ -223,7 +253,7 @@ pub fn Apu(comptime config: Config) type {
                             self.stepQuarterFrame();
                             self.stepHalfFrame();
                             if (!self.reg.irq_inhibit) {
-                                self.cpu.irq();
+                                self.cpu.setIrqSource("ApuFrameCounter");
                             }
                         },
                     }
@@ -245,16 +275,14 @@ pub fn Apu(comptime config: Config) type {
                     }
                 }
                 self.frame_counter +%= 1;
-                self.next_frame_counter_timer.setNext(@intToFloat(f32, cpu_freq) * frame_counter_rate);
+                self.frame_counter_timer.setNext();
             }
 
-            if (self.next_output_timer.isDone(self.cycles)) {
+            if (self.output_timer.isDone(self.cycles)) {
                 self.audio_context.addSample(self.getOutput()) catch {
                     std.log.err("Couldn't add sample", .{});
                 };
-                const freq_f = @intToFloat(f32, cpu_freq);
-                const sample_f = @intToFloat(f32, audio.Context(config.method).sample_rate);
-                self.next_output_timer.setNext(freq_f / sample_f);
+                self.output_timer.setNext();
             }
 
             self.cycles +%= 1;
