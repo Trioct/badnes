@@ -514,7 +514,7 @@ const TriangleChannel = struct {
     fn stepTimer(self: *TriangleChannel) void {
         if (self.timer.value == 0) {
             self.timer.reset();
-            if (self.length_counter.value > 0 and self.linear_counter.value > 0) {
+            if (self.length_counter.value > 0 and self.linear_counter.value > 0 and self.timer.period > 2) {
                 self.duty_index +%= 1;
             }
         } else {
@@ -538,12 +538,7 @@ const TriangleChannel = struct {
     }
 
     fn output(self: TriangleChannel) u4 {
-        // timer period isn't a real gate but it seems like maybe my sdl audio impl isn't right
-        // TODO: figure out why triangle makes high pitch noise even with low pass filter
-        if (self.gateLinearCounter() and self.length_counter.gate() and self.timer.period > 2) {
-            return triangle_duty_values[self.duty_index];
-        }
-        return 0;
+        return triangle_duty_values[self.duty_index];
     }
 };
 
