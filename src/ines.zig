@@ -25,8 +25,9 @@ pub const RomInfo = struct {
     chr_rom: ?[]u8,
 
     prg_rom_mul_16kb: u8,
-    prg_ram_mul_8kb: ?u8,
+    prg_ram_mul_8kb: u8,
     chr_header_byte: ChrHeaderByte,
+    has_sram: bool,
 
     mirroring: Mirroring,
     has_trainer: bool,
@@ -77,14 +78,14 @@ pub const RomInfo = struct {
             const bit1 = (flags6 >> 2) & 0b10;
             break :blk @intToEnum(Mirroring, bit0 | bit1);
         };
-        const has_prg_ram = (flags6 >> 1) & 1 == 1;
+        const has_sram = (flags6 >> 1) & 1 == 1;
         const has_trainer = (flags6 >> 2) & 1 == 1;
 
         const flags7 = try reader.readByte();
         const mapper = (flags7 & 0xf) | (flags6 >> 4);
 
         const flags8 = try reader.readByte();
-        const prg_ram_mul_8kb = if (has_prg_ram) @maximum(flags8, 1) else null;
+        const prg_ram_mul_8kb = flags8;
 
         try reader.skipBytes(7 + if (has_trainer) @as(usize, 512) else 0, .{});
 
@@ -115,6 +116,7 @@ pub const RomInfo = struct {
             .prg_rom_mul_16kb = prg_rom_mul_16kb,
             .prg_ram_mul_8kb = prg_ram_mul_8kb,
             .chr_header_byte = chr_header_byte,
+            .has_sram = has_sram,
 
             .mirroring = mirroring,
             .has_trainer = has_trainer,
@@ -130,8 +132,9 @@ test "Parse INES 1.0" {
     defer info.deinit(testing.allocator);
 
     try testing.expectEqual(@as(u8, 1), info.prg_rom_mul_16kb);
-    try testing.expectEqual(@as(?u8, null), info.prg_ram_mul_8kb);
+    try testing.expectEqual(@as(u8, 0), info.prg_ram_mul_8kb);
     try testing.expectEqual(RomInfo.ChrHeaderByte{ .Mul8Kb = 1 }, info.chr_header_byte);
+    try testing.expectEqual(false, info.has_sram);
     try testing.expectEqual(Mirroring.Horizontal, info.mirroring);
     try testing.expectEqual(false, info.has_trainer);
     try testing.expectEqual(@as(u8, 0), info.mapper);

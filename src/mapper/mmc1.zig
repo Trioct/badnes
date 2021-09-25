@@ -21,6 +21,7 @@ pub fn Mapper(comptime config: Config) type {
 
         cpu: *Cpu(config),
 
+        sram: common.Sram,
         prgs: common.Prgs,
         chrs: common.Chrs,
         mirroring: enum(u2) {
@@ -53,6 +54,7 @@ pub fn Mapper(comptime config: Config) type {
         ) Allocator.Error!void {
             self.cpu = &console.cpu;
 
+            self.sram = try common.Sram.init(allocator, info.has_sram);
             self.prgs = try common.Prgs.init(allocator, info.prg_rom);
             self.chrs = try common.Chrs.init(allocator, info.chr_rom);
             self.mirroring = @intToEnum(@TypeOf(self.mirroring), @enumToInt(info.mirroring));
@@ -70,6 +72,7 @@ pub fn Mapper(comptime config: Config) type {
         pub fn deinitMem(generic: G, allocator: *Allocator) void {
             const self = common.fromGeneric(Self, config, generic);
 
+            self.sram.deinit(allocator);
             self.prgs.deinit(allocator);
             self.chrs.deinit(allocator);
             allocator.destroy(self);
@@ -102,7 +105,12 @@ pub fn Mapper(comptime config: Config) type {
 
         pub fn readPrg(generic: G, addr: u16) u8 {
             const self = common.fromGeneric(Self, config, generic);
-            return self.prgs.read(addr);
+            return switch (addr) {
+                0x4020...0x5fff => 0,
+                0x6000...0x7fff => self.sram.read(addr),
+                0x8000...0xffff => self.prgs.read(addr),
+                else => unreachable,
+            };
         }
 
         pub fn readChr(generic: G, addr: u16) u8 {
@@ -112,7 +120,15 @@ pub fn Mapper(comptime config: Config) type {
 
         pub fn writePrg(generic: *G, addr: u16, val: u8) void {
             const self = common.fromGeneric(Self, config, generic.*);
+            switch (addr) {
+                0x4020...0x5fff => {},
+                0x6000...0x7fff => self.sram.write(addr, val),
+                0x8000...0xffff => self.writeRom(addr, val),
+                else => unreachable,
+            }
+        }
 
+        fn writeRom(self: *Self, addr: u16, val: u8) void {
             const temp = self.last_write_cycle;
             self.last_write_cycle = self.cpu.cycles;
             if (self.cpu.cycles == temp + 1) {

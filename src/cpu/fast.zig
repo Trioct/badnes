@@ -536,9 +536,9 @@ pub fn Memory(comptime config: Config) type {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
                 0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
-                0x8000...0xffff => return self.cart.readPrg(addr),
                 0x4000...0x4013, 0x4015, 0x4017 => return self.apu.read(@truncate(u5, addr)),
                 0x4016 => return self.controller.getNextButton(),
+                0x4020...0xffff => return self.cart.readPrg(addr),
                 else => {
                     //std.log.err("CPU: Unimplemented read memory address ({x:0>4})", .{addr});
                     return 0;
@@ -560,7 +560,7 @@ pub fn Memory(comptime config: Config) type {
                 0x4016 => if (val & 1 == 1) {
                     self.controller.strobe();
                 },
-                0x8000...0xffff => return self.cart.writePrg(addr, val),
+                0x4020...0xffff => return self.cart.writePrg(addr, val),
                 else => {
                     //std.log.err("CPU: Unimplemented write memory address ({x:0>4})", .{addr});
                 },

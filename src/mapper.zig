@@ -24,15 +24,15 @@ pub fn GenericMapper(comptime config: Config) type {
 
         mapper_ptr: OpaquePtr,
 
-        mapper_mirrorNametable: fn (Self, u16) u12,
+        deinitFn: fn (Self, *Allocator) void,
 
-        mapper_readPrg: fn (Self, u16) u8,
-        mapper_readChr: fn (Self, u16) u8,
+        mirrorNametableFn: fn (Self, u16) u12,
 
-        mapper_writePrg: fn (*Self, u16, u8) void,
-        mapper_writeChr: fn (*Self, u16, u8) void,
+        readPrgFn: fn (Self, u16) u8,
+        readChrFn: fn (Self, u16) u8,
 
-        mapper_deinit: fn (Self, *Allocator) void,
+        writePrgFn: fn (*Self, u16, u8) void,
+        writeChrFn: fn (*Self, u16, u8) void,
 
         const OpaquePtr = *align(@alignOf(usize)) opaque {};
 
@@ -49,42 +49,22 @@ pub fn GenericMapper(comptime config: Config) type {
                     return Self{
                         .mapper_ptr = @ptrCast(OpaquePtr, ptr),
 
-                        .mapper_mirrorNametable = T.mirrorNametable,
+                        .deinitFn = T.deinitMem,
 
-                        .mapper_readPrg = T.readPrg,
-                        .mapper_readChr = T.readChr,
+                        .mirrorNametableFn = T.mirrorNametable,
 
-                        .mapper_writePrg = T.writePrg,
-                        .mapper_writeChr = T.writeChr,
+                        .readPrgFn = T.readPrg,
+                        .readChrFn = T.readChr,
 
-                        .mapper_deinit = T.deinitMem,
+                        .writePrgFn = T.writePrg,
+                        .writeChrFn = T.writeChr,
                     };
                 }
             }).init;
         }
 
         pub fn deinit(self: Self, allocator: *Allocator) void {
-            self.mapper_deinit(self, allocator);
-        }
-
-        pub fn mirrorNametable(self: Self, addr: u16) u12 {
-            return self.mapper_mirrorNametable(self, addr);
-        }
-
-        pub fn readPrg(self: Self, addr: u16) u8 {
-            return self.mapper_readPrg(self, addr);
-        }
-
-        pub fn readChr(self: Self, addr: u16) u8 {
-            return self.mapper_readChr(self, addr);
-        }
-
-        pub fn writePrg(self: *Self, addr: u16, val: u8) void {
-            self.mapper_writePrg(self, addr, val);
-        }
-
-        pub fn writeChr(self: *Self, addr: u16, val: u8) void {
-            self.mapper_writeChr(self, addr, val);
+            self.deinitFn(self, allocator);
         }
 
         // I really don't need this because the type system will *probably* take care of it for me,

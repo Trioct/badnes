@@ -816,7 +816,7 @@ pub fn Memory(comptime config: Config) type {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
                 0x2000...0x3fff => return self.ppu.reg.peek(@truncate(u3, addr)),
-                0x8000...0xffff => return self.cart.peekPrg(addr),
+                0x4020...0xffff => return self.cart.peekPrg(addr),
                 else => return 0,
             }
         }
@@ -825,13 +825,11 @@ pub fn Memory(comptime config: Config) type {
             self.open_bus = switch (addr) {
                 0x0000...0x1fff => self.ram[addr & 0x7ff],
                 0x2000...0x3fff => self.ppu.reg.read(@truncate(u3, addr)),
-                0x8000...0xffff => self.cart.readPrg(addr),
                 0x4000...0x4013, 0x4015, 0x4017 => self.apu.read(@truncate(u5, addr)),
+                0x4014 => self.ppu.reg.io_bus,
                 0x4016 => self.controller.getNextButton(),
-                else => blk: {
-                    //std.log.err("CPU: Unimplemented read memory address ({x:0>4})", .{addr});
-                    break :blk self.open_bus;
-                },
+                0x4018...0x401f => return self.open_bus,
+                0x4020...0xffff => self.cart.readPrg(addr),
             };
             return self.open_bus;
         }
@@ -846,10 +844,8 @@ pub fn Memory(comptime config: Config) type {
                 0x4016 => if (val & 1 == 1) {
                     self.controller.strobe();
                 },
-                0x8000...0xffff => return self.cart.writePrg(addr, val),
-                else => {
-                    //std.log.err("CPU: Unimplemented write memory address ({x:0>4})", .{addr});
-                },
+                0x4018...0x401f => {},
+                0x4020...0xffff => self.cart.writePrg(addr, val),
             }
         }
     };

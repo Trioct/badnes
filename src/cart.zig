@@ -45,27 +45,29 @@ pub fn Cart(comptime config: Config) type {
         }
 
         pub inline fn mirrorNametable(self: Self, addr: u16) u12 {
-            return self.mapper.mirrorNametable(addr);
+            return self.mapper.mirrorNametableFn(self.mapper, addr);
         }
 
+        // TODO
         pub const peekPrg = readPrg;
 
         pub inline fn readPrg(self: Self, addr: u16) u8 {
-            return self.mapper.readPrg(addr);
+            return self.mapper.readPrgFn(self.mapper, addr);
         }
 
         pub inline fn writePrg(self: *Self, addr: u16, val: u8) void {
-            self.mapper.writePrg(addr, val);
+            self.mapper.writePrgFn(&self.mapper, addr, val);
         }
 
+        // TODO
         pub const peekChr = readChr;
 
         pub inline fn readChr(self: Self, addr: u16) u8 {
-            return self.mapper.readChr(addr);
+            return self.mapper.readChrFn(self.mapper, addr);
         }
 
         pub inline fn writeChr(self: *Self, addr: u16, val: u8) void {
-            return self.mapper.writeChr(addr, val);
+            return self.mapper.writeChrFn(&self.mapper, addr, val);
         }
     };
 }

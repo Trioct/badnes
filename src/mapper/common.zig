@@ -34,8 +34,10 @@ pub fn BankSwitcher(comptime size: usize) type {
                     .selected = [2]usize{ 0, second_selected },
                 };
             } else {
+                const b = try allocator.alloc(u8, size * 2);
+                std.mem.set(u8, b, 0);
                 return Self{
-                    .bytes = try allocator.alloc(u8, size * 2),
+                    .bytes = b,
                     .writeable = true,
                     .selected = [2]usize{ 0, size },
                 };
@@ -78,6 +80,45 @@ pub fn BankSwitcher(comptime size: usize) type {
         }
     };
 }
+
+pub const Sram = struct {
+    bytes: ?[]u8,
+
+    pub fn init(allocator: *Allocator, mapped: bool) !Sram {
+        const bytes = blk: {
+            if (mapped) {
+                const b = try allocator.alloc(u8, 0x2000);
+                std.mem.set(u8, b, 0);
+                break :blk b;
+            } else {
+                break :blk null;
+            }
+        };
+        return Sram{
+            .bytes = bytes,
+        };
+    }
+
+    pub fn deinit(self: Sram, allocator: *Allocator) void {
+        if (self.bytes) |bytes| {
+            allocator.free(bytes);
+        }
+    }
+
+    pub fn read(self: Sram, addr: u16) u8 {
+        if (self.bytes) |bytes| {
+            return bytes[addr & 0x1fff];
+        } else {
+            return 0;
+        }
+    }
+
+    pub fn write(self: *Sram, addr: u16, val: u8) void {
+        if (self.bytes) |bytes| {
+            bytes[addr & 0x1fff] = val;
+        }
+    }
+};
 
 pub fn mirrorNametable(mirroring: Mirroring, addr: u16) u12 {
     return switch (mirroring) {

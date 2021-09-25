@@ -45,7 +45,11 @@ pub fn Mapper(comptime config: Config) type {
 
         pub fn readPrg(generic: G, addr: u16) u8 {
             const self = common.fromGeneric(Self, config, generic);
-            return self.prgs.read(addr);
+            if (addr >= 0x8000) {
+                return self.prgs.read(addr);
+            } else {
+                return 0;
+            }
         }
 
         pub fn readChr(generic: G, addr: u16) u8 {

@@ -19,7 +19,7 @@ This is in a very in-development state, and this is almost certainly not a good 
 
 Mappers:
 
-- [ ] SRAM
+- [x] SRAM
 - [x] NROM / Mapper 000
 - [x] MMC1 / Mapper 001
 - [ ] UxROM / Mapper 002
