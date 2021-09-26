@@ -66,9 +66,11 @@ pub fn Cpu(comptime config: Config) type {
         }
 
         fn dma(self: *Self, addr_high: u8) void {
+            const oam_addr = self.ppu.reg.oam_addr;
             var i: usize = 0;
             while (i < 256) : (i += 1) {
-                self.ppu.mem.oam[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
+                const oam_i: u8 = oam_addr +% @truncate(u8, i);
+                self.ppu.mem.oam[oam_i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
 
                 self.apu.runCycle();
                 self.ppu.runCycle();
@@ -193,7 +195,9 @@ pub fn Cpu(comptime config: Config) type {
                 }
             };
 
-            //self.logInstruction(instruction, value);
+            if (@import("build_options").log_step) {
+                self.logInstruction(instruction, value);
+            }
 
             switch (instruction.op) {
                 .OpIll => {},

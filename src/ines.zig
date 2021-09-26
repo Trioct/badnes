@@ -128,7 +128,7 @@ pub const RomInfo = struct {
 const testing = std.testing;
 
 test "Parse INES 1.0" {
-    const info = try RomInfo.readFile(testing.allocator, "roms/tests/nestest.nes");
+    const info = try RomInfo.readFile(testing.allocator, "roms/nes-test-roms/other/nestest.nes");
     defer info.deinit(testing.allocator);
 
     try testing.expectEqual(@as(u8, 1), info.prg_rom_mul_16kb);

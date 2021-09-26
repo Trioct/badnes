@@ -14,6 +14,7 @@ pub fn build(b: *std.build.Builder) void {
     const mode = b.standardReleaseOptions();
 
     const precision = b.option(console.Precision, "precision", "Whether to prioritize performance or accuracy") orelse .Accurate;
+    const log_step = b.option(bool, "log-step", "Whether to log every cpu step to stdout") orelse false;
 
     const exe = b.addExecutable("badnes", "src/main.zig");
     exe.linkLibC();
@@ -26,6 +27,7 @@ pub fn build(b: *std.build.Builder) void {
     exe.addOptions("build_options", exe_options);
 
     exe_options.addOption(console.Precision, "precision", precision);
+    exe_options.addOption(bool, "log_step", log_step);
 
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());
@@ -41,5 +43,6 @@ pub fn build(b: *std.build.Builder) void {
 
     const tests = b.addTest("src/tests.zig");
     tests.setBuildMode(.Debug);
+    tests.addOptions("build_options", exe_options);
     test_step.dependOn(&tests.step);
 }

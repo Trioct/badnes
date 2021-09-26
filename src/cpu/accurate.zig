@@ -105,9 +105,11 @@ pub fn Cpu(comptime config: Config) type {
 
         fn dma(self: *Self, addr_high: u8) void {
             // will set open_bus via mem.read, check if accurate
+            const oam_addr = self.ppu.reg.oam_addr;
             var i: usize = 0;
             while (i < 256) : (i += 1) {
-                self.ppu.oam.primary[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
+                const oam_i: u8 = oam_addr +% @truncate(u8, i);
+                self.ppu.oam.primary[oam_i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
 
                 self.apu.runCycle();
                 self.ppu.runCycle();
@@ -160,7 +162,9 @@ pub fn Cpu(comptime config: Config) type {
                 self.execInterrupt();
             }
 
-            //self.logCycle();
+            if (@import("build_options").log_step) {
+                self.logCycle();
+            }
             self.cycleSideEffects();
         }
 
@@ -758,8 +762,8 @@ pub fn Cpu(comptime config: Config) type {
             const op_str = opToString(self.state.op);
 
             const cycle = if (self.state.cycle == 15) -1 else @intCast(i5, self.state.cycle);
-            std.log.debug("Ct: {}; C: {: >2}; {s}; PC: ${x:0>4}; Bus: ${x:0>2}; " ++
-                "A: ${x:0>2}; X: ${x:0>2}; Y: ${x:0>2}; P: %{b:0>8}; S: ${x:0>2}", .{
+            std.debug.print("Ct: {}; C: {: >2}; {s}; PC: ${x:0>4}; Bus: ${x:0>2}; " ++
+                "A: ${x:0>2}; X: ${x:0>2}; Y: ${x:0>2}; P: %{b:0>8}; S: ${x:0>2}\n", .{
                 self.cycles,
                 cycle,
                 op_str,

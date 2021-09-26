@@ -95,6 +95,7 @@ pub fn Apu(comptime config: Config) type {
 
             frame_counter_mode: u1 = 0,
             irq_inhibit: bool = false,
+            frame_interrupt: bool = false,
 
             fn init() Registers {
                 return Registers{
@@ -120,13 +121,13 @@ pub fn Apu(comptime config: Config) type {
             switch (addr) {
                 0x15 => {
                     var val: u8 = 0;
-                    val |= @as(u7, @boolToInt(reg.irq_inhibit)) << 6;
+                    val |= @as(u7, @boolToInt(reg.frame_interrupt)) << 6;
                     val |= @as(u4, @boolToInt(reg.noise.length_counter.value > 0)) << 3;
                     val |= @as(u3, @boolToInt(reg.triangle.length_counter.value > 0)) << 2;
                     val |= @as(u2, @boolToInt(reg.pulse2.length_counter.value > 0)) << 1;
                     val |= @boolToInt(reg.pulse1.length_counter.value > 0);
 
-                    reg.irq_inhibit = false;
+                    reg.frame_interrupt = false;
                     self.cpu.clearIrqSource("ApuFrameCounter");
 
                     return val;
@@ -188,6 +189,7 @@ pub fn Apu(comptime config: Config) type {
                     reg.irq_inhibit = flags.getMaskBool(u8, val, 0x40);
 
                     if (reg.irq_inhibit) {
+                        reg.frame_interrupt = false;
                         self.cpu.clearIrqSource("ApuFrameCounter");
                     }
 
@@ -253,6 +255,7 @@ pub fn Apu(comptime config: Config) type {
                             self.stepQuarterFrame();
                             self.stepHalfFrame();
                             if (!self.reg.irq_inhibit) {
+                                self.reg.frame_interrupt = true;
                                 self.cpu.setIrqSource("ApuFrameCounter");
                             }
                         },

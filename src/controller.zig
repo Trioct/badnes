@@ -39,7 +39,7 @@ pub const PureController = struct {
         }
     }
 
-    pub fn holdButton(self: *PureController, comptime button: []const u8) void {
-        ff_masks.setFlag(self, .{ .flags = button }, true);
+    pub fn holdButtons(self: *PureController, comptime buttons: []const u8) void {
+        ff_masks.setFlags(self, .{ .flags = buttons }, 0xff);
     }
 };

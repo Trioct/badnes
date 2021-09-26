@@ -262,13 +262,13 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         pub fn runCycle(self: *Self) void {
+            if (self.scanline == 261 and self.cycle == 339 and self.odd_frame) {
+                self.cycle += 1;
+            }
+
             if (!self.onRenderScanline()) {
                 self.runPostCycle();
                 return;
-            }
-
-            if (self.scanline == 261 and self.cycle == 339 and self.odd_frame) {
-                self.cycle += 1;
             }
 
             if (self.renderingEnabled()) {
@@ -526,9 +526,9 @@ pub fn Registers(comptime config: Config) type {
                             self.vram_data_buffer = mem_val;
                             break :blk prev;
                         } else {
-                            // TODO: not quite how it works
-                            // https://wiki.nesdev.org/w/index.php?title=PPU_registers#PPUDATA
-                            self.vram_data_buffer = mem_val;
+                            // quirk
+                            const nametable_addr = @truncate(u14, self.ppu.vram_addr.value) & 0x2fff;
+                            self.vram_data_buffer = self.ppu.mem.read(nametable_addr);
                             break :blk mem_val;
                         }
                     };
@@ -549,7 +549,10 @@ pub fn Registers(comptime config: Config) type {
                 1 => self.ppu_mask = val,
                 2 => {},
                 3 => self.oam_addr = val,
-                4 => self.ppu.oam.primary[self.oam_addr] = val,
+                4 => {
+                    self.ppu.oam.primary[self.oam_addr] = val;
+                    self.oam_addr +%= 1;
+                },
                 5 => if (!self.write_toggle) {
                     setMask(u15, &self.ppu.vram_temp.value, val >> 3, 0x1f);
                     self.ppu.fine_x = @truncate(u3, val);

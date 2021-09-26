@@ -47,9 +47,7 @@ pub fn Ppu(comptime config: Config) type {
             };
         }
 
-        pub fn deinit(self: Self) void {
-            _ = self;
-        }
+        pub fn deinit(_: Self) void {}
 
         fn incCoarseX(self: *Self) void {
             if ((self.v.value & @as(u15, 0x1f)) == 0x1f) {
@@ -283,6 +281,7 @@ fn Registers(comptime config: Config) type {
                 },
                 4 => {
                     ppu.mem.oam[self.oam_addr] = val;
+                    self.oam_addr +%= 1;
                 },
                 5 => if (!ppu.w) {
                     ppu.t.value = (ppu.t.value & ~@as(u15, 0x1f)) | (val >> 3);
@@ -347,14 +346,12 @@ fn Memory(comptime config: Config) type {
 
         pub fn write(self: *Self, addr: u14, val: u8) void {
             switch (addr) {
+                0x0000...0x1fff => self.cart.writeChr(addr, val),
                 0x2000...0x3eff => self.nametables[addr & 0xfff] = val,
                 0x3f00...0x3fff => if (addr & 3 == 0) {
                     self.palettes[0] = val;
                 } else {
                     self.palettes[addr & 0x1f] = val;
-                },
-                0x0000...0x1fff => {
-                    std.log.err("Unimplemented write memory address ({x:0>4})", .{addr});
                 },
             }
         }

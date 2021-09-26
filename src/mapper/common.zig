@@ -57,8 +57,8 @@ pub fn BankSwitcher(comptime size: usize) type {
         }
 
         pub fn setBothBanks(self: *Self, bank: usize) void {
-            self.selected[0] = bank * size;
-            self.selected[1] = (bank + 1) * size;
+            self.setBank(0, bank);
+            self.setBank(1, bank + 1);
         }
 
         pub fn mapAddr(self: Self, addr: FullAddr) usize {

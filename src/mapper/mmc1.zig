@@ -155,12 +155,11 @@ pub fn Mapper(comptime config: Config) type {
                             3 => .PrgFixLast,
                         };
                         self.chr_bank_mode = @intToEnum(@TypeOf(self.chr_bank_mode), @truncate(u1, final_val >> 4));
-                        self.chrs.setBank(1, 0);
                     },
                     0xa000...0xbfff => {
                         switch (self.chr_bank_mode) {
                             .ChrSwitchBoth => {
-                                self.chrs.setBothBanks(self.shift_register & ~@as(u5, 1));
+                                self.chrs.setBothBanks(final_val & 0x1e);
                             },
                             .ChrSwitchSeparate => {
                                 self.chrs.setBank(0, final_val);
