@@ -1,9 +1,12 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const build_options = @import("build_options");
+
 const console_ = @import("console.zig");
 const Console = console_.Console;
 const Precision = console_.Precision;
+const IoMethod = console_.IoMethod;
 
 const sdl = @import("sdl/bindings.zig");
 const video = @import("video.zig");
@@ -38,8 +41,10 @@ pub fn main() anyerror!void {
     try audio_context.init();
     defer audio_context.deinit(allocator);
 
-    const precision = Precision.Accurate;
-    var console = Console(.{ .precision = precision, .method = .Sdl }).alloc();
+    var console = Console(.{
+        .precision = comptime std.meta.stringToEnum(Precision, @tagName(build_options.precision)).?,
+        .method = .Sdl,
+    }).alloc();
     console.init(video_context.frame_buffer, &audio_context);
     defer console.deinit(allocator);
 
@@ -78,15 +83,15 @@ pub fn main() anyerror!void {
 
         // Batch run instructions/cycles to not get bogged down by sdl.pollEvent
         var i: usize = 0;
-        switch (precision) {
+        switch (build_options.precision) {
             .Fast => {
                 while (i < 2000) : (i += 1) {
-                    console.cpu.runInstruction();
+                    console.cpu.runStep();
                 }
             },
             .Accurate => {
                 while (i < 5000) : (i += 1) {
-                    console.cpu.runCycle();
+                    console.cpu.runStep();
                 }
             },
         }

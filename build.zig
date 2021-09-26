@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const console = @import("src/console.zig");
+
 pub fn build(b: *std.build.Builder) void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
@@ -11,12 +13,19 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
+    const precision = b.option(console.Precision, "precision", "Whether to prioritize performance or accuracy") orelse .Accurate;
+
     const exe = b.addExecutable("badnes", "src/main.zig");
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();
+
+    const exe_options = b.addOptions();
+    exe.addOptions("build_options", exe_options);
+
+    exe_options.addOption(console.Precision, "precision", precision);
 
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());

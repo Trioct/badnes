@@ -19,7 +19,6 @@ const getMaskBool = flags_.getMaskBool;
 pub fn Ppu(comptime config: Config) type {
     return struct {
         const Self = @This();
-        pub const precision = config.precision;
 
         cart: *Cart(config),
         cpu: *Cpu(config),
@@ -396,20 +395,20 @@ const BgPatternShiftRegister = struct {
     bits: u16 = 0,
     next_byte: u8 = 0,
 
-    pub fn feed(self: *BgPatternShiftRegister) void {
+    fn feed(self: *BgPatternShiftRegister) void {
         self.bits <<= 1;
     }
 
-    pub fn prepare(self: *BgPatternShiftRegister, byte: u8) void {
+    fn prepare(self: *BgPatternShiftRegister, byte: u8) void {
         self.next_byte = byte;
     }
 
-    pub fn load(self: *BgPatternShiftRegister) void {
+    fn load(self: *BgPatternShiftRegister) void {
         self.bits |= self.next_byte;
         self.next_byte = 0;
     }
 
-    pub fn get(self: BgPatternShiftRegister, offset: u3) u1 {
+    fn get(self: BgPatternShiftRegister, offset: u3) u1 {
         return @truncate(u1, ((self.bits << offset) & 0x8000) >> 15);
     }
 };
@@ -417,15 +416,15 @@ const BgPatternShiftRegister = struct {
 const SpritePatternShiftRegister = struct {
     bits: u8 = 0,
 
-    pub fn feed(self: *SpritePatternShiftRegister) void {
+    fn feed(self: *SpritePatternShiftRegister) void {
         self.bits <<= 1;
     }
 
-    pub fn load(self: *SpritePatternShiftRegister, byte: u8) void {
+    fn load(self: *SpritePatternShiftRegister, byte: u8) void {
         self.bits = byte;
     }
 
-    pub fn get(self: SpritePatternShiftRegister, offset: u3) u1 {
+    fn get(self: SpritePatternShiftRegister, offset: u3) u1 {
         return @truncate(u1, ((self.bits << offset) & 0x80) >> 7);
     }
 };
@@ -435,19 +434,19 @@ const AttributeShiftRegister = struct {
     latch: u1 = 0,
     next_latch: u1 = 0,
 
-    pub fn feed(self: *AttributeShiftRegister) void {
+    fn feed(self: *AttributeShiftRegister) void {
         self.bits = (self.bits << 1) | self.latch;
     }
 
-    pub fn prepare(self: *AttributeShiftRegister, bit: u1) void {
+    fn prepare(self: *AttributeShiftRegister, bit: u1) void {
         self.next_latch = bit;
     }
 
-    pub fn load(self: *AttributeShiftRegister) void {
+    fn load(self: *AttributeShiftRegister) void {
         self.latch = self.next_latch;
     }
 
-    pub fn get(self: AttributeShiftRegister, offset: u3) u1 {
+    fn get(self: AttributeShiftRegister, offset: u3) u1 {
         return @truncate(u1, ((self.bits << offset) & 0x80) >> 7);
     }
 };
@@ -473,7 +472,7 @@ pub fn Registers(comptime config: Config) type {
 
         const ff_masks = common.RegisterMasks(Self){};
 
-        pub fn init(ppu: *Ppu(config)) Self {
+        fn init(ppu: *Ppu(config)) Self {
             return Self{ .ppu = ppu };
         }
 
@@ -589,7 +588,7 @@ pub fn Memory(comptime config: Config) type {
         nametables: [0x1000]u8,
         palettes: [0x20]u8,
 
-        pub fn init(cart: *Cart(config)) Self {
+        fn init(cart: *Cart(config)) Self {
             return Self{
                 .cart = cart,
                 .nametables = std.mem.zeroes([0x1000]u8),
@@ -621,7 +620,7 @@ pub fn Memory(comptime config: Config) type {
     };
 }
 
-pub const Oam = struct {
+const Oam = struct {
     primary: [0x100]u8,
     secondary: [0x20]u8,
 
@@ -643,7 +642,7 @@ pub const Oam = struct {
     // for sprite evaluation step 3
     sprite_index: u8,
 
-    pub fn resetSecondaryTemps(self: *Oam) void {
+    fn resetSecondaryTemps(self: *Oam) void {
         self.primary_index = 0;
         self.sprites_found = 0;
         self.search_finished = false;
@@ -653,11 +652,11 @@ pub const Oam = struct {
         self.sprite_index = 0;
     }
 
-    pub fn readForSecondary(self: *Oam) void {
+    fn readForSecondary(self: *Oam) void {
         self.temp_read_byte = self.primary[self.primary_index];
     }
 
-    pub fn storeSecondary(self: *Oam) void {
+    fn storeSecondary(self: *Oam) void {
         self.secondary[self.sprites_found * 4 + (self.primary_index & 3)] = self.temp_read_byte;
         self.primary_index +%= 1;
     }

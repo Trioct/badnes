@@ -65,14 +65,11 @@ pub fn Cpu(comptime config: Config) type {
             self.reg.pc = self.mem.readWord(0xfffa);
         }
 
-        pub fn dma(self: *Self, addr_high: u8) void {
+        fn dma(self: *Self, addr_high: u8) void {
             var i: usize = 0;
             while (i < 256) : (i += 1) {
-                // TODO: just to get compiling
-                switch (@TypeOf(self.ppu.*).precision) {
-                    .Fast => self.ppu.mem.oam[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i)),
-                    .Accurate => self.ppu.oam.primary[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i)),
-                }
+                self.ppu.mem.oam[i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
+
                 self.apu.runCycle();
                 self.ppu.runCycle();
                 self.ppu.runCycle();
@@ -84,17 +81,17 @@ pub fn Cpu(comptime config: Config) type {
             }
         }
 
-        pub fn pushStack(self: *Self, val: u8) void {
+        fn pushStack(self: *Self, val: u8) void {
             self.mem.write(@as(u9, self.reg.s) | 0x100, val);
             self.reg.s -%= 1;
         }
 
-        pub fn popStack(self: *Self) u8 {
+        fn popStack(self: *Self) u8 {
             self.reg.s +%= 1;
             return self.mem.read(@as(u9, self.reg.s) | 0x100);
         }
 
-        pub fn branchRelative(self: *Self, condition: bool, jump: u8) void {
+        fn branchRelative(self: *Self, condition: bool, jump: u8) void {
             if (condition) {
                 const prev_pc = self.reg.pc;
                 self.reg.pc = @bitCast(u16, @bitCast(i16, self.reg.pc) +% @bitCast(i8, jump));
@@ -132,7 +129,8 @@ pub fn Cpu(comptime config: Config) type {
             }
         };
 
-        pub fn runInstruction(self: *Self) void {
+        /// Runs an instruction
+        pub fn runStep(self: *Self) void {
             const opcode = self.mem.read(self.reg.pc);
             const instruction = Instruction(.Fast).decode(opcode);
 

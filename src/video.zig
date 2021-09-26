@@ -1,16 +1,16 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const OutputMethod = @import("console.zig").OutputMethod;
+const IoMethod = @import("console.zig").IoMethod;
 
-pub fn Context(comptime method: OutputMethod) type {
+pub fn Context(comptime method: IoMethod) type {
     switch (method) {
         .Pure => return PureContext,
         .Sdl => return @import("sdl/video.zig").Context,
     }
 }
 
-pub fn FrameBuffer(comptime method: OutputMethod) type {
+pub fn FrameBuffer(comptime method: IoMethod) type {
     return @TypeOf(@as(Context(method), undefined).frame_buffer);
 }
 

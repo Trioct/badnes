@@ -18,7 +18,6 @@ const setMask = flags_.setMask;
 pub fn Ppu(comptime config: Config) type {
     return struct {
         const Self = @This();
-        pub const precision = config.precision;
 
         cart: *Cart(config),
         cpu: *Cpu(config),
@@ -52,7 +51,7 @@ pub fn Ppu(comptime config: Config) type {
             _ = self;
         }
 
-        pub fn incCoarseX(self: *Self) void {
+        fn incCoarseX(self: *Self) void {
             if ((self.v.value & @as(u15, 0x1f)) == 0x1f) {
                 self.v.value = (self.v.value & ~@as(u15, 0x1f)) ^ 0x400;
             } else {
@@ -60,7 +59,7 @@ pub fn Ppu(comptime config: Config) type {
             }
         }
 
-        pub fn incCoarseY(self: *Self) void {
+        fn incCoarseY(self: *Self) void {
             if ((self.v.value & 0x7000) != 0x7000) {
                 self.v.value += 0x1000;
             } else {
@@ -78,7 +77,7 @@ pub fn Ppu(comptime config: Config) type {
             }
         }
 
-        pub fn renderingEnabled(self: Self) bool {
+        fn renderingEnabled(self: Self) bool {
             return self.reg.getFlags(.{ .flags = "sb" }) != 0;
         }
 
@@ -125,7 +124,7 @@ pub fn Ppu(comptime config: Config) type {
             }
         }
 
-        pub fn runVisibleScanlineCycle(self: *Self) void {
+        fn runVisibleScanlineCycle(self: *Self) void {
             if (!self.renderingEnabled() or self.cycle == 0) {
                 return;
             }
@@ -218,7 +217,7 @@ pub fn Ppu(comptime config: Config) type {
     };
 }
 
-pub fn Registers(comptime config: Config) type {
+fn Registers(comptime config: Config) type {
     return packed struct {
         const Self = @This();
 
@@ -318,7 +317,7 @@ pub fn Registers(comptime config: Config) type {
     };
 }
 
-pub fn Memory(comptime config: Config) type {
+fn Memory(comptime config: Config) type {
     return struct {
         const Self = @This();
 
@@ -327,7 +326,7 @@ pub fn Memory(comptime config: Config) type {
         palettes: [0x20]u8,
         oam: [0x100]u8,
 
-        pub fn init(cart: *Cart(config)) Self {
+        fn init(cart: *Cart(config)) Self {
             return Self{
                 .cart = cart,
                 .nametables = std.mem.zeroes([0x1000]u8),

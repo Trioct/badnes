@@ -45,7 +45,7 @@ pub fn Cpu(comptime config: Config) type {
             .access = .Read,
         },
 
-        pub const IrqSource = packed struct {
+        const IrqSource = packed struct {
             Brk: bool,
             ApuFrameCounter: bool,
             padding: u6,
@@ -55,12 +55,12 @@ pub fn Cpu(comptime config: Config) type {
             }
         };
 
-        pub const Interrupt = enum {
+        const Interrupt = enum {
             Irq,
             Nmi,
         };
 
-        pub const ExecState = struct {
+        const ExecState = struct {
             opcode: u8,
             op: Op(.Accurate),
             addressing: Addressing(.Accurate),
@@ -129,14 +129,6 @@ pub fn Cpu(comptime config: Config) type {
             self.reg.s -%= 1;
         }
 
-        pub fn runInstruction(self: *Self) void {
-            self.runCycle();
-            while (self.state.cycle != 0) {
-                self.runCycle();
-            }
-            //self.logCycle();
-        }
-
         fn cycleSideEffects(self: *Self) void {
             self.apu.runCycle();
             self.ppu.runCycle();
@@ -146,7 +138,7 @@ pub fn Cpu(comptime config: Config) type {
             self.cycles += 1;
         }
 
-        pub fn runCycle(self: *Self) void {
+        pub fn runStep(self: *Self) void {
             // TODO: accurate interrupt polling
             if (!self.interrupt_acknowledged) {
                 switch (self.state.cycle) {

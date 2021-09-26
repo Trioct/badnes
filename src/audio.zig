@@ -2,9 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayListUnmanaged;
 
-const OutputMethod = @import("console.zig").OutputMethod;
+const IoMethod = @import("console.zig").IoMethod;
 
-pub fn Context(comptime method: OutputMethod) type {
+pub fn Context(comptime method: IoMethod) type {
     switch (method) {
         .Pure => return PureContext,
         .Sdl => return @import("sdl/audio.zig").Context,

@@ -16,14 +16,14 @@ pub const Precision = enum {
     Accurate,
 };
 
-pub const OutputMethod = enum {
+pub const IoMethod = enum {
     Pure,
     Sdl,
 };
 
 pub const Config = struct {
     precision: Precision,
-    method: OutputMethod,
+    method: IoMethod,
 };
 
 pub fn Console(comptime config: Config) type {

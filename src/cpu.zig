@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const CpuFast = @import("cpu/fast.zig").Cpu;
 const CpuAccurate = @import("cpu/accurate.zig").Cpu;
 

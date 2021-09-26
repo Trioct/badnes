@@ -2,13 +2,13 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayListUnmanaged;
 
-const OutputMethod = @import("console.zig").OutputMethod;
+const IoMethod = @import("console.zig").IoMethod;
 
 const flags_ = @import("flags.zig");
 const CreateFlags = flags_.CreateFlags;
 const FieldFlagsDef = flags_.FieldFlagsDef;
 
-pub fn Controller(comptime method: OutputMethod) type {
+pub fn Controller(comptime method: IoMethod) type {
     switch (method) {
         .Pure => return PureController,
         .Sdl => return @import("sdl/controller.zig").Controller,
