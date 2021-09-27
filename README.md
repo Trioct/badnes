@@ -2,6 +2,7 @@
 
 My personal emulator project written in Zig.
 This is in a very in-development state, and this is almost certainly not a good example of code quality right now (if it ever will be).
+I'm not looking for issues/prs as it's not meant for anyone else to really use at the moment, I just wanted my code out there in case someone else finds it useful when making their own emulator
 
 ### Screenshots
 
@@ -39,8 +40,10 @@ PPU:
 
 - [x] Works with simple games
 - [x] Seperate fast and accurate implementations
-- [ ] Accurate version is accurate
-- [ ] Fast version is fast
+- [x] Accurate version is accurate
+    - [x] Usable
+- [x] Fast version is fast
+    - [ ] Usable
 
 APU:
 

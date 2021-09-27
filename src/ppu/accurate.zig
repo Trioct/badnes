@@ -339,8 +339,8 @@ pub fn Ppu(comptime config: Config) type {
                 var i: usize = 0;
                 while (i < self.oam.active_sprites) : (i += 1) {
                     if (sprite_pattern_index == 0 and self.oam.sprite_x_counters[i] == 0) {
-                        const p1 = self.oam.sprite_pattern_srs1[i].get(0);
-                        const p2 = self.oam.sprite_pattern_srs2[i].get(0);
+                        const p1 = self.oam.sprite_pattern_srs1[i].get();
+                        const p2 = self.oam.sprite_pattern_srs2[i].get();
                         const pattern_index = p1 | (@as(u2, p2) << 1);
                         if (pattern_index != 0) {
                             sprite_pattern_index = pattern_index;
@@ -424,8 +424,8 @@ const SpritePatternShiftRegister = struct {
         self.bits = byte;
     }
 
-    fn get(self: SpritePatternShiftRegister, offset: u3) u1 {
-        return @truncate(u1, ((self.bits << offset) & 0x80) >> 7);
+    fn get(self: SpritePatternShiftRegister) u1 {
+        return @truncate(u1, (self.bits & 0x80) >> 7);
     }
 };
 
@@ -532,7 +532,7 @@ pub fn Registers(comptime config: Config) type {
                             break :blk mem_val;
                         }
                     };
-                    self.ppu.vram_addr.value +%= if (self.ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    self.ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
                     return val;
                 },
             }
@@ -576,7 +576,7 @@ pub fn Registers(comptime config: Config) type {
                 },
                 7 => {
                     self.ppu.mem.write(@truncate(u14, self.ppu.vram_addr.value), val);
-                    self.ppu.vram_addr.value +%= if (self.ppu.reg.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    self.ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
                 },
             }
         }
