@@ -217,6 +217,10 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         fn getBgPattern(self: Self, reverted_v: Address) u2 {
+            if (!self.reg.getFlag(.{ .flags = "b" })) {
+                return 0;
+            }
+
             const nametable_byte: u14 = self.mem.peek(0x2000 | @truncate(u14, reverted_v.value));
             const addr = (nametable_byte << 4) | reverted_v.fineY();
             const offset = if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "B" })) @as(u14, 0x1000) else 0;
@@ -229,6 +233,10 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         fn getSpriteIndex(self: *Self) ?u8 {
+            if (!self.reg.getFlag(.{ .flags = "s" })) {
+                return null;
+            }
+
             const x = self.cycle;
             var index: ?u8 = null;
 

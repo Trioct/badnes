@@ -335,7 +335,7 @@ pub fn Ppu(comptime config: Config) type {
             var sprite_pattern_index: u2 = 0;
             var sprite_attribute_index: u2 = 0;
             var sprite_behind: bool = false;
-            {
+            if (self.reg.getFlag(.{ .flags = "s" })) {
                 var i: usize = 0;
                 while (i < self.oam.active_sprites) : (i += 1) {
                     if (sprite_pattern_index == 0 and self.oam.sprite_x_counters[i] == 0) {

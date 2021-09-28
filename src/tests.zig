@@ -43,6 +43,10 @@ fn testBlarggRom(comptime precision: Precision, comptime rom: []const u8, cycles
     return testRom(precision, rom, cycles, null, 0x00f0, 0x01);
 }
 
+fn testBlarggRom2(comptime precision: Precision, comptime rom: []const u8, cycles: usize) !void {
+    return testRom(precision, rom, cycles, null, 0x00f8, 0x01);
+}
+
 test "nestest.nes basic cpu accuracy" {
     try testRom(.Fast, "other/nestest.nes", 700000, "S", 0x0000, 0x00);
     try testRom(.Accurate, "other/nestest.nes", 700000, "S", 0x0000, 0x00);
@@ -65,6 +69,26 @@ test "blargg ppu tests" {
 
     try testBlarggRom(.Fast, "blargg_ppu_tests_2005.09.15b/sprite_ram.nes", 120000);
     try testBlarggRom(.Accurate, "blargg_ppu_tests_2005.09.15b/sprite_ram.nes", 120000);
+}
+
+test "blargg ppu sprite 0 tests" {
+    try testBlarggRom2(.Fast, "sprite_hit_tests_2005.10.05/01.basics.nes", 800000);
+    try testBlarggRom2(.Accurate, "sprite_hit_tests_2005.10.05/01.basics.nes", 800000);
+
+    try testBlarggRom2(.Fast, "sprite_hit_tests_2005.10.05/02.alignment.nes", 750000);
+    try testBlarggRom2(.Accurate, "sprite_hit_tests_2005.10.05/02.alignment.nes", 750000);
+
+    try testBlarggRom2(.Fast, "sprite_hit_tests_2005.10.05/03.corners.nes", 450000);
+    try testBlarggRom2(.Accurate, "sprite_hit_tests_2005.10.05/03.corners.nes", 450000);
+
+    try testBlarggRom2(.Fast, "sprite_hit_tests_2005.10.05/04.flip.nes", 400000);
+    try testBlarggRom2(.Accurate, "sprite_hit_tests_2005.10.05/04.flip.nes", 400000);
+
+    //try testBlarggRom2(.Fast, "sprite_hit_tests_2005.10.05/07.screen_bottom.nes", 575000);
+    try testBlarggRom2(.Accurate, "sprite_hit_tests_2005.10.05/07.screen_bottom.nes", 575000);
+
+    try testBlarggRom2(.Fast, "sprite_hit_tests_2005.10.05/08.double_height.nes", 575000);
+    try testBlarggRom2(.Accurate, "sprite_hit_tests_2005.10.05/08.double_height.nes", 575000);
 }
 
 test {
