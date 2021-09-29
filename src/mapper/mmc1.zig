@@ -25,26 +25,30 @@ pub fn Mapper(comptime config: Config) type {
         prgs: common.Prgs,
         chrs: common.Chrs,
         mirroring: enum(u2) {
-            OneScreenLower,
-            OneScreenUpper,
-            Vertical,
-            Horizontal,
+            OneScreenLower = 0,
+            OneScreenUpper = 1,
+            Vertical = 2,
+            Horizontal = 3,
         },
 
-        last_write_cycle: usize,
-        shift_register: u4,
-        write_count: u3,
+        last_write_cycle: usize = 0,
+        shift_register: u4 = 0,
+        write_count: u3 = 0,
 
         prg_bank_mode: enum {
             PrgSwitchBoth,
             PrgFixFirst,
             PrgFixLast,
-        },
+        } = .PrgFixLast,
 
         chr_bank_mode: enum(u1) {
-            ChrSwitchBoth,
-            ChrSwitchSeparate,
-        },
+            ChrSwitchBoth = 0,
+            ChrSwitchSeparate = 1,
+        } = .ChrSwitchBoth,
+
+        prg_bank: u4 = 0,
+        chr_bank0: u5 = 0,
+        chr_bank1: u5 = 0,
 
         pub fn initMem(
             self: *Self,
@@ -52,21 +56,17 @@ pub fn Mapper(comptime config: Config) type {
             console: *Console(config),
             info: *ines.RomInfo,
         ) Allocator.Error!void {
-            self.cpu = &console.cpu;
+            self.* = Self{
+                .cpu = &console.cpu,
 
-            self.sram = try common.Sram.init(allocator, info.has_sram);
-            self.prgs = try common.Prgs.init(allocator, info.prg_rom);
-            self.chrs = try common.Chrs.init(allocator, info.chr_rom);
-            self.mirroring = @intToEnum(@TypeOf(self.mirroring), @enumToInt(info.mirroring));
+                .sram = try common.Sram.init(allocator, info.has_sram),
+                .prgs = try common.Prgs.init(allocator, info.prg_rom),
+                .chrs = try common.Chrs.init(allocator, info.chr_rom),
+                .mirroring = @intToEnum(@TypeOf(self.mirroring), @enumToInt(info.mirroring)),
+            };
 
-            self.last_write_cycle = 0;
-            self.shift_register = 0;
-            self.write_count = 0;
-
-            self.prg_bank_mode = .PrgFixLast;
-            self.chr_bank_mode = .ChrSwitchBoth;
-
-            self.setPrg(0);
+            self.updatePrg();
+            self.updateChr();
         }
 
         pub fn deinitMem(generic: G, allocator: *Allocator) void {
@@ -76,20 +76,6 @@ pub fn Mapper(comptime config: Config) type {
             self.prgs.deinit(allocator);
             self.chrs.deinit(allocator);
             allocator.destroy(self);
-        }
-
-        fn setPrg(self: *Self, bank: u4) void {
-            switch (self.prg_bank_mode) {
-                .PrgSwitchBoth => self.prgs.setBothBanks(bank),
-                .PrgFixFirst => {
-                    self.prgs.setBank(0, 0);
-                    self.prgs.setBank(1, bank);
-                },
-                .PrgFixLast => {
-                    self.prgs.setBank(0, bank);
-                    self.prgs.setBank(1, self.prgs.lastBankIndex());
-                },
-            }
         }
 
         pub fn mirrorNametable(generic: G, addr: u16) u12 {
@@ -128,6 +114,32 @@ pub fn Mapper(comptime config: Config) type {
             }
         }
 
+        fn updatePrg(self: *Self) void {
+            switch (self.prg_bank_mode) {
+                .PrgSwitchBoth => self.prgs.setConsecutiveBanks(self.prg_bank, 2),
+                .PrgFixFirst => {
+                    self.prgs.setBank(0, 0);
+                    self.prgs.setBank(1, self.prg_bank);
+                },
+                .PrgFixLast => {
+                    self.prgs.setBank(0, self.prg_bank);
+                    self.prgs.setBank(1, self.prgs.bankCount() - 1);
+                },
+            }
+        }
+
+        fn updateChr(self: *Self) void {
+            switch (self.chr_bank_mode) {
+                .ChrSwitchBoth => {
+                    self.chrs.setConsecutiveBanks(self.chr_bank0 & 0x1e, 2);
+                },
+                .ChrSwitchSeparate => {
+                    self.chrs.setBank(0, self.chr_bank0);
+                    self.chrs.setBank(1, self.chr_bank1);
+                },
+            }
+        }
+
         fn writeRom(self: *Self, addr: u16, val: u8) void {
             const temp = self.last_write_cycle;
             self.last_write_cycle = self.cpu.cycles;
@@ -138,6 +150,10 @@ pub fn Mapper(comptime config: Config) type {
             if (flags.getMaskBool(u8, val, 0x80)) {
                 self.shift_register = 0;
                 self.write_count = 0;
+
+                self.prg_bank_mode = .PrgFixLast;
+                self.updatePrg();
+
                 return;
             }
 
@@ -155,27 +171,22 @@ pub fn Mapper(comptime config: Config) type {
                             3 => .PrgFixLast,
                         };
                         self.chr_bank_mode = @intToEnum(@TypeOf(self.chr_bank_mode), @truncate(u1, final_val >> 4));
+
+                        self.updatePrg();
+                        self.updateChr();
                     },
                     0xa000...0xbfff => {
-                        switch (self.chr_bank_mode) {
-                            .ChrSwitchBoth => {
-                                self.chrs.setBothBanks(final_val & 0x1e);
-                            },
-                            .ChrSwitchSeparate => {
-                                self.chrs.setBank(0, final_val);
-                            },
-                        }
+                        self.chr_bank0 = final_val;
+                        self.updateChr();
                     },
                     0xc000...0xdfff => {
-                        switch (self.chr_bank_mode) {
-                            .ChrSwitchBoth => {},
-                            .ChrSwitchSeparate => {
-                                self.chrs.setBank(1, final_val);
-                            },
-                        }
+                        self.chr_bank1 = final_val;
+                        self.updateChr();
                     },
                     0xe000...0xffff => {
-                        self.setPrg(@truncate(u4, final_val));
+                        self.prg_bank = @truncate(u4, final_val);
+                        self.updatePrg();
+
                         if (final_val & 0x10 != 0) {
                             std.log.err("Mapper 1 requesting ram when not implemented", .{});
                         }

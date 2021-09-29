@@ -5,10 +5,10 @@ const Mirroring = @import("../ines.zig").Mirroring;
 const Config = @import("../console.zig").Config;
 const GenericMapper = @import("../mapper.zig").GenericMapper;
 
-pub const Prgs = BankSwitcher(0x4000);
-pub const Chrs = BankSwitcher(0x1000);
+pub const Prgs = BankSwitcher(0x4000, 2);
+pub const Chrs = BankSwitcher(0x1000, 2);
 
-pub fn BankSwitcher(comptime size: usize) type {
+pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type {
     std.debug.assert(std.math.isPowerOfTwo(size));
 
     const bank_bits = std.math.log2_int(usize, size);
@@ -23,49 +23,66 @@ pub fn BankSwitcher(comptime size: usize) type {
         bytes: []u8,
         writeable: bool,
 
-        selected: [2]usize,
+        selected: [selectable_banks]usize,
 
         pub fn init(allocator: *Allocator, bytes: ?[]u8) !Self {
-            if (bytes) |b| {
-                const second_selected = if (b.len == size) 0 else size;
-                return Self{
-                    .bytes = b,
-                    .writeable = false,
-                    .selected = [2]usize{ 0, second_selected },
-                };
-            } else {
-                const b = try allocator.alloc(u8, size * 2);
-                std.mem.set(u8, b, 0);
-                return Self{
-                    .bytes = b,
-                    .writeable = true,
-                    .selected = [2]usize{ 0, size },
-                };
+            var bank_switcher = blk: {
+                if (bytes) |b| {
+                    break :blk Self{
+                        .bytes = b,
+                        .writeable = false,
+                        .selected = [_]usize{undefined} ** selectable_banks,
+                    };
+                } else {
+                    const b = try allocator.alloc(u8, size * selectable_banks);
+                    std.mem.set(u8, b, 0);
+                    break :blk Self{
+                        .bytes = b,
+                        .writeable = true,
+                        .selected = [_]usize{undefined} ** selectable_banks,
+                    };
+                }
+            };
+
+            for (bank_switcher.selected) |*b, i| {
+                b.* = (i % (bank_switcher.bankCount())) * size;
             }
+
+            return bank_switcher;
         }
 
         pub fn deinit(self: Self, allocator: *Allocator) void {
             allocator.free(self.bytes);
         }
 
-        pub fn lastBankIndex(self: Self) usize {
-            return @divExact(self.bytes.len, size) - 1;
+        pub fn bankCount(self: Self) usize {
+            return @divExact(self.bytes.len, size);
         }
 
-        pub fn setBank(self: *Self, selected: u1, bank: usize) void {
+        pub fn getSelectedBankIndex(self: Self, selected_index: usize) usize {
+            return @divExact(self.selected[selected_index], size);
+        }
+
+        pub fn setBank(self: *Self, selected: usize, bank: usize) void {
             self.selected[selected] = bank * size;
         }
 
-        pub fn setBothBanks(self: *Self, bank: usize) void {
-            self.setBank(0, bank);
-            self.setBank(1, bank + 1);
+        pub fn setConsecutiveBanks(self: *Self, bank: usize, count: usize) void {
+            std.debug.assert(bank + count <= self.bankCount());
+
+            var i: usize = 0;
+            while (i < count) : (i += 1) {
+                self.setBank(i, bank + i);
+            }
         }
 
         pub fn mapAddr(self: Self, addr: FullAddr) usize {
-            const offset = switch (addr) {
-                0x0000...(size - 1) => self.selected[0],
-                size...(size * 2 - 1) => self.selected[1],
-            };
+            var i: usize = 0;
+            const offset = blk: while (i <= size) : (i += 1) {
+                if (addr >= i * size and addr < (i + 1) * size) {
+                    break :blk self.selected[i];
+                }
+            } else unreachable;
             return offset | @truncate(BankAddr, addr);
         }
 

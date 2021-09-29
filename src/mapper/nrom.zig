@@ -25,9 +25,11 @@ pub fn Mapper(comptime config: Config) type {
             _: *Console(config),
             info: *ines.RomInfo,
         ) Allocator.Error!void {
-            self.prgs = try common.Prgs.init(allocator, info.prg_rom);
-            self.chrs = try common.Chrs.init(allocator, info.chr_rom);
-            self.mirroring = info.mirroring;
+            self.* = Self{
+                .prgs = try common.Prgs.init(allocator, info.prg_rom),
+                .chrs = try common.Chrs.init(allocator, info.chr_rom),
+                .mirroring = info.mirroring,
+            };
         }
 
         pub fn deinitMem(generic: G, allocator: *Allocator) void {
