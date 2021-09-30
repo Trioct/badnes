@@ -128,7 +128,7 @@ pub fn Apu(comptime config: Config) type {
                     val |= @boolToInt(reg.pulse1.length_counter.value > 0);
 
                     reg.frame_interrupt = false;
-                    self.cpu.clearIrqSource("ApuFrameCounter");
+                    self.cpu.clearIrqSource("apu_frame_counter");
 
                     return val;
                 },
@@ -190,7 +190,7 @@ pub fn Apu(comptime config: Config) type {
 
                     if (reg.irq_inhibit) {
                         reg.frame_interrupt = false;
-                        self.cpu.clearIrqSource("ApuFrameCounter");
+                        self.cpu.clearIrqSource("apu_frame_counter");
                     }
 
                     self.frame_counter_timer.setNextFrom(self.cycles);
@@ -256,7 +256,7 @@ pub fn Apu(comptime config: Config) type {
                             self.stepHalfFrame();
                             if (!self.reg.irq_inhibit) {
                                 self.reg.frame_interrupt = true;
-                                self.cpu.setIrqSource("ApuFrameCounter");
+                                self.cpu.setIrqSource("apu_frame_counter");
                             }
                         },
                     }

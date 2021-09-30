@@ -6,8 +6,8 @@ const IoMethod = @import("console.zig").IoMethod;
 
 pub fn Context(comptime method: IoMethod) type {
     switch (method) {
-        .Pure => return PureContext,
-        .Sdl => return @import("sdl/audio.zig").Context,
+        .pure => return PureContext,
+        .sdl => return @import("sdl/audio.zig").Context,
     }
 }
 

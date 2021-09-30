@@ -33,17 +33,17 @@ pub fn main() anyerror!void {
     try sdl.init(.{sdl.c.SDL_INIT_VIDEO | sdl.c.SDL_INIT_AUDIO | sdl.c.SDL_INIT_EVENTS});
     defer sdl.quit();
 
-    var video_context = try video.Context(.Sdl).init("Badnes", 0, 0, 256 * 3, 240 * 3);
+    var video_context = try video.Context(.sdl).init("Badnes", 0, 0, 256 * 3, 240 * 3);
     defer video_context.deinit();
 
-    var audio_context = try audio.Context(.Sdl).alloc(allocator);
+    var audio_context = try audio.Context(.sdl).alloc(allocator);
     // TODO: need a errdefer too but lazy
     try audio_context.init();
     defer audio_context.deinit(allocator);
 
     var console = Console(.{
         .precision = comptime std.meta.stringToEnum(Precision, @tagName(build_options.precision)).?,
-        .method = .Sdl,
+        .method = .sdl,
     }).alloc();
     console.init(video_context.frame_buffer, &audio_context);
     defer console.deinit(allocator);
@@ -69,7 +69,7 @@ pub fn main() anyerror!void {
         if (console.ppu.present_frame) {
             frames += 1;
             console.ppu.present_frame = false;
-            total_time += try video_context.drawFrame(.{ .timing = .Timed });
+            total_time += try video_context.drawFrame(.{ .timing = .timed });
 
             if (total_time > std.time.ns_per_s) {
                 std.debug.print("FPS: {}\n", .{frames});
@@ -84,12 +84,12 @@ pub fn main() anyerror!void {
         // Batch run instructions/cycles to not get bogged down by sdl.pollEvent
         var i: usize = 0;
         switch (build_options.precision) {
-            .Fast => {
+            .fast => {
                 while (i < 2000) : (i += 1) {
                     console.cpu.runStep();
                 }
             },
-            .Accurate => {
+            .accurate => {
                 while (i < 5000) : (i += 1) {
                     console.cpu.runStep();
                 }

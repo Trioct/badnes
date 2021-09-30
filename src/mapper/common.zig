@@ -158,9 +158,9 @@ pub const Sram = struct {
 
 pub fn mirrorNametable(mirroring: Mirroring, addr: u16) u12 {
     return switch (mirroring) {
-        .Horizontal => @truncate(u12, addr & 0xbff),
-        .Vertical => @truncate(u12, addr & 0x7ff),
-        .FourScreen => @truncate(u12, addr),
+        .horizontal => @truncate(u12, addr & 0xbff),
+        .vertical => @truncate(u12, addr & 0x7ff),
+        .four_screen => @truncate(u12, addr),
     };
 }
 

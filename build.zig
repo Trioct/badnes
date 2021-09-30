@@ -13,7 +13,7 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const precision = b.option(console.Precision, "precision", "Whether to prioritize performance or accuracy") orelse .Accurate;
+    const precision = b.option(console.Precision, "precision", "Whether to prioritize performance or accuracy") orelse .accurate;
     const log_step = b.option(bool, "log-step", "Whether to log every cpu step to stdout") orelse false;
 
     const exe = b.addExecutable("badnes", "src/main.zig");

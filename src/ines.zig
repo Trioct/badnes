@@ -15,9 +15,9 @@ pub const InesError = error{
 };
 
 pub const Mirroring = enum {
-    Horizontal,
-    Vertical,
-    FourScreen,
+    horizontal,
+    vertical,
+    four_screen,
 };
 
 pub const RomInfo = struct {
@@ -34,8 +34,8 @@ pub const RomInfo = struct {
     mapper: u8, //TODO: Make enum
 
     const ChrHeaderByte = union(enum) {
-        UsesChrRam,
-        Mul8Kb: u8,
+        uses_chr_ram,
+        mul_8kb: u8,
     };
 
     pub fn deinit(self: RomInfo, allocator: *Allocator) void {
@@ -66,9 +66,9 @@ pub const RomInfo = struct {
         const chr_header_byte = blk: {
             const byte = try reader.readByte();
             if (byte == 0) {
-                break :blk .UsesChrRam;
+                break :blk .uses_chr_ram;
             } else {
-                break :blk RomInfo.ChrHeaderByte{ .Mul8Kb = byte };
+                break :blk RomInfo.ChrHeaderByte{ .mul_8kb = byte };
             }
         };
 
@@ -97,8 +97,8 @@ pub const RomInfo = struct {
         }
 
         const chr_rom = switch (chr_header_byte) {
-            .UsesChrRam => null,
-            .Mul8Kb => |chr_rom_mul_8kb| blk: {
+            .uses_chr_ram => null,
+            .mul_8kb => |chr_rom_mul_8kb| blk: {
                 const chr_rom_size = @as(usize, chr_rom_mul_8kb) * 1024 * 8;
                 const rom = try allocator.alloc(u8, chr_rom_size);
                 errdefer allocator.free(rom);
@@ -133,9 +133,9 @@ test "Parse INES 1.0" {
 
     try testing.expectEqual(@as(u8, 1), info.prg_rom_mul_16kb);
     try testing.expectEqual(@as(u8, 0), info.prg_ram_mul_8kb);
-    try testing.expectEqual(RomInfo.ChrHeaderByte{ .Mul8Kb = 1 }, info.chr_header_byte);
+    try testing.expectEqual(RomInfo.ChrHeaderByte{ .mul_8kb = 1 }, info.chr_header_byte);
     try testing.expectEqual(false, info.has_sram);
-    try testing.expectEqual(Mirroring.Horizontal, info.mirroring);
+    try testing.expectEqual(Mirroring.horizontal, info.mirroring);
     try testing.expectEqual(false, info.has_trainer);
     try testing.expectEqual(@as(u8, 0), info.mapper);
 }

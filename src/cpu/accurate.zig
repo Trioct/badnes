@@ -40,14 +40,14 @@ pub fn Cpu(comptime config: Config) type {
 
         state: ExecState = .{
             .opcode = 0,
-            .op = .OpBrk,
-            .addressing = .Implied,
-            .access = .Read,
+            .op = .op_brk,
+            .addressing = .implied,
+            .access = .read,
         },
 
         const IrqSource = packed struct {
-            Brk: bool,
-            ApuFrameCounter: bool,
+            brk: bool,
+            apu_frame_counter: bool,
             padding: u6,
 
             pub fn value(self: IrqSource) u8 {
@@ -56,14 +56,14 @@ pub fn Cpu(comptime config: Config) type {
         };
 
         const Interrupt = enum {
-            Irq,
-            Nmi,
+            irq,
+            nmi,
         };
 
         const ExecState = struct {
             opcode: u8,
-            op: Op(.Accurate),
-            addressing: Addressing(.Accurate),
+            op: Op(.accurate),
+            addressing: Addressing(.accurate),
             access: Access,
             cycle: u4 = 0,
 
@@ -87,7 +87,6 @@ pub fn Cpu(comptime config: Config) type {
         pub fn reset(self: *Self) void {
             flags.setMask(u16, &self.reg.pc, self.mem.peek(0xfffc), 0xff);
             flags.setMask(u16, &self.reg.pc, @as(u16, self.mem.peek(0xfffd)) << 8, 0xff00);
-            //self.reg.pc = 0xc000;
             std.log.debug("PC set to {x:0>4}", .{self.reg.pc});
         }
 
@@ -189,28 +188,28 @@ pub fn Cpu(comptime config: Config) type {
             switch (self.state.cycle) {
                 0 => {
                     self.readNextByte();
-                    self.state.op = .OpBrk;
+                    self.state.op = .op_brk;
                     self.state.opcode = 0;
                 },
                 1 => self.readNextByte(),
                 2 => self.pushStack(@truncate(u8, self.reg.pc >> 8)),
                 3 => self.pushStack(@truncate(u8, self.reg.pc)),
                 4 => {
-                    const brk_flag = if (self.irq_pin.Brk) @as(u8, 0x10) else 0;
+                    const brk_flag = if (self.irq_pin.brk) @as(u8, 0x10) else 0;
                     self.pushStack(self.reg.p | 0b0010_0000 | brk_flag);
 
                     if (self.nmi_pin) {
-                        self.interrupt_at_check = .Nmi;
+                        self.interrupt_at_check = .nmi;
                         self.nmi_pin = false;
                     } else {
-                        self.interrupt_at_check = .Irq;
-                        self.irq_pin.Brk = false;
+                        self.interrupt_at_check = .irq;
+                        self.irq_pin.brk = false;
                     }
                 },
                 5 => {
                     const addr: u16 = switch (self.interrupt_at_check) {
-                        .Irq => 0xfffe,
-                        .Nmi => 0xfffa,
+                        .irq => 0xfffe,
+                        .nmi => 0xfffa,
                     };
                     const low = self.mem.read(addr);
                     flags.setMask(u16, &self.reg.pc, low, 0xff);
@@ -218,8 +217,8 @@ pub fn Cpu(comptime config: Config) type {
                 },
                 6 => {
                     const addr: u16 = switch (self.interrupt_at_check) {
-                        .Irq => 0xffff,
-                        .Nmi => 0xfffb,
+                        .irq => 0xffff,
+                        .nmi => 0xfffb,
                     };
                     const high: u16 = self.mem.read(addr);
                     flags.setMask(u16, &self.reg.pc, high << 8, 0xff00);
@@ -232,7 +231,7 @@ pub fn Cpu(comptime config: Config) type {
         }
 
         fn setStateFromOpcode(self: *Self, opcode: u8) void {
-            const instruction = Instruction(.Accurate).decode(opcode);
+            const instruction = Instruction(.accurate).decode(opcode);
 
             self.state.opcode = opcode;
             self.state.op = instruction.op;
@@ -247,82 +246,82 @@ pub fn Cpu(comptime config: Config) type {
 
         fn runCycle1(self: *Self) void {
             switch (self.state.addressing) {
-                .Special => self.runCycle1Special(),
-                .Absolute, .AbsoluteX, .AbsoluteY => _ = self.fetchNextByte(),
-                .IndirectX, .IndirectY, .Relative => self.state.c_byte = self.fetchNextByte(),
-                .Implied => self.runCycle1Implied(),
-                .Immediate => self.runCycle1Immediate(),
-                .ZeroPage, .ZeroPageX, .ZeroPageY => self.state.c_addr = self.fetchNextByte(),
+                .special => self.runCycle1Special(),
+                .absolute, .absoluteX, .absoluteY => _ = self.fetchNextByte(),
+                .indirectX, .indirectY, .relative => self.state.c_byte = self.fetchNextByte(),
+                .implied => self.runCycle1Implied(),
+                .immediate => self.runCycle1Immediate(),
+                .zeroPage, .zeroPageX, .zeroPageY => self.state.c_addr = self.fetchNextByte(),
             }
         }
 
         fn runCycle2(self: *Self) void {
             switch (self.state.addressing) {
-                .Special => self.runCycle2Special(),
-                .Absolute => self.runCycle2Absolute(),
-                .AbsoluteX => self.runCycle2AbsoluteIndexed(self.reg.x),
-                .AbsoluteY => self.runCycle2AbsoluteIndexed(self.reg.y),
-                .IndirectX => self.runCycle2IndirectX(),
-                .IndirectY => _ = self.mem.read(self.state.c_byte),
-                .Relative => self.runCycle2Relative(),
-                .ZeroPage => self.runCycleAccess0(),
-                .ZeroPageX => self.runCycle2ZpIndirect(self.reg.x),
-                .ZeroPageY => self.runCycle2ZpIndirect(self.reg.y),
+                .special => self.runCycle2Special(),
+                .absolute => self.runCycle2Absolute(),
+                .absoluteX => self.runCycle2AbsoluteIndexed(self.reg.x),
+                .absoluteY => self.runCycle2AbsoluteIndexed(self.reg.y),
+                .indirectX => self.runCycle2IndirectX(),
+                .indirectY => _ = self.mem.read(self.state.c_byte),
+                .relative => self.runCycle2Relative(),
+                .zeroPage => self.runCycleAccess0(),
+                .zeroPageX => self.runCycle2ZpIndirect(self.reg.x),
+                .zeroPageY => self.runCycle2ZpIndirect(self.reg.y),
                 else => unreachable,
             }
         }
 
         fn runCycle3(self: *Self) void {
             switch (self.state.addressing) {
-                .Special => self.runCycle3Special(),
-                .Absolute => self.runCycleAccess0(),
-                .AbsoluteX => self.runCycle3AbsoluteIndexed(self.reg.x),
-                .AbsoluteY => self.runCycle3AbsoluteIndexed(self.reg.y),
-                .IndirectX => _ = self.mem.read(self.state.c_byte),
-                .IndirectY => self.runCycle3IndirectY(),
-                .Relative => self.runCycle3Relative(),
-                .ZeroPage => self.runCycleAccess1(),
-                .ZeroPageX, .ZeroPageY => self.runCycleAccess0(),
+                .special => self.runCycle3Special(),
+                .absolute => self.runCycleAccess0(),
+                .absoluteX => self.runCycle3AbsoluteIndexed(self.reg.x),
+                .absoluteY => self.runCycle3AbsoluteIndexed(self.reg.y),
+                .indirectX => _ = self.mem.read(self.state.c_byte),
+                .indirectY => self.runCycle3IndirectY(),
+                .relative => self.runCycle3Relative(),
+                .zeroPage => self.runCycleAccess1(),
+                .zeroPageX, .zeroPageY => self.runCycleAccess0(),
                 else => unreachable,
             }
         }
 
         fn runCycle4(self: *Self) void {
             switch (self.state.addressing) {
-                .Special => self.runCycle4Special(),
-                .Absolute => self.runCycleAccess1(),
-                .AbsoluteX, .AbsoluteY => self.runCycleAccess0(),
-                .Relative => self.runCycle4Relative(),
-                .IndirectX => self.runCycle4IndirectX(),
-                .IndirectY => self.runCycle4IndirectY(),
-                .ZeroPage => self.runCycleAccess2(),
-                .ZeroPageX, .ZeroPageY => self.runCycleAccess1(),
+                .special => self.runCycle4Special(),
+                .absolute => self.runCycleAccess1(),
+                .absoluteX, .absoluteY => self.runCycleAccess0(),
+                .relative => self.runCycle4Relative(),
+                .indirectX => self.runCycle4IndirectX(),
+                .indirectY => self.runCycle4IndirectY(),
+                .zeroPage => self.runCycleAccess2(),
+                .zeroPageX, .zeroPageY => self.runCycleAccess1(),
                 else => unreachable,
             }
         }
 
         fn runCycle5(self: *Self) void {
             switch (self.state.addressing) {
-                .Special => self.runCycle5Special(),
-                .Absolute => self.runCycleAccess2(),
-                .AbsoluteX, .AbsoluteY => self.runCycleAccess1(),
-                .IndirectX, .IndirectY => self.runCycleAccess0(),
-                .ZeroPageX, .ZeroPageY => self.runCycleAccess2(),
+                .special => self.runCycle5Special(),
+                .absolute => self.runCycleAccess2(),
+                .absoluteX, .absoluteY => self.runCycleAccess1(),
+                .indirectX, .indirectY => self.runCycleAccess0(),
+                .zeroPageX, .zeroPageY => self.runCycleAccess2(),
                 else => unreachable,
             }
         }
 
         fn runCycle6(self: *Self) void {
             switch (self.state.addressing) {
-                .AbsoluteX, .AbsoluteY => self.runCycleAccess2(),
-                .IndirectX, .IndirectY => self.runCycleAccess1(),
+                .absoluteX, .absoluteY => self.runCycleAccess2(),
+                .indirectX, .indirectY => self.runCycleAccess1(),
                 else => unreachable,
             }
         }
 
         fn runCycle7(self: *Self) void {
             switch (self.state.addressing) {
-                .IndirectX, .IndirectY => self.runCycleAccess2(),
+                .indirectX, .indirectY => self.runCycleAccess2(),
                 else => unreachable,
             }
         }
@@ -333,30 +332,30 @@ pub fn Cpu(comptime config: Config) type {
         /// depends on the addressing mode
         fn runCycleAccess0(self: *Self) void {
             switch (self.state.access) {
-                .Read => {
+                .read => {
                     self.state.c_byte = self.mem.read(self.state.c_addr);
                     self.execOpcode();
                 },
-                .Rmw => self.state.c_byte = self.mem.read(self.state.c_addr),
-                .Write => self.execOpcode(),
+                .rmw => self.state.c_byte = self.mem.read(self.state.c_addr),
+                .write => self.execOpcode(),
                 else => unreachable,
             }
         }
 
         fn runCycleAccess1(self: *Self) void {
-            std.debug.assert(self.state.access == .Rmw);
+            std.debug.assert(self.state.access == .rmw);
             self.mem.write(self.state.c_addr, self.state.c_byte);
         }
 
         fn runCycleAccess2(self: *Self) void {
-            std.debug.assert(self.state.access == .Rmw);
+            std.debug.assert(self.state.access == .rmw);
             self.execOpcode();
         }
 
         fn runCycle1Special(self: *Self) void {
             switch (self.state.op) {
-                .OpBrk, .OpJmp, .OpJsr => self.state.c_byte = self.fetchNextByte(),
-                .OpRti, .OpRts, .OpPha, .OpPhp, .OpPla, .OpPlp => self.readNextByte(),
+                .op_brk, .op_jmp, .op_jsr => self.state.c_byte = self.fetchNextByte(),
+                .op_rti, .op_rts, .op_pha, .op_php, .op_pla, .op_plp => self.readNextByte(),
                 else => unreachable,
             }
         }
@@ -373,12 +372,12 @@ pub fn Cpu(comptime config: Config) type {
 
         fn runCycle2Special(self: *Self) void {
             switch (self.state.op) {
-                .OpBrk => {
-                    self.setIrqSource("Brk");
+                .op_brk => {
+                    self.setIrqSource("brk");
                     self.interrupt_acknowledged = true;
                     self.state.cycle = 2;
                 },
-                .OpJmp => switch (self.state.opcode) {
+                .op_jmp => switch (self.state.opcode) {
                     0x4c => {
                         const low = self.state.c_byte;
                         const high: u16 = self.fetchNextByte();
@@ -392,16 +391,16 @@ pub fn Cpu(comptime config: Config) type {
                     },
                     else => unreachable,
                 },
-                .OpJsr => {}, // unsure/subtle
-                .OpPha => {
+                .op_jsr => {}, // unsure/subtle
+                .op_pha => {
                     self.pushStack(self.reg.a);
                     self.finishInstruction();
                 },
-                .OpPhp => {
+                .op_php => {
                     self.pushStack(self.reg.p | 0b0011_0000);
                     self.finishInstruction();
                 },
-                .OpPla, .OpPlp, .OpRti, .OpRts => self.reg.s +%= 1,
+                .op_pla, .op_plp, .op_rti, .op_rts => self.reg.s +%= 1,
                 else => unreachable,
             }
         }
@@ -428,14 +427,14 @@ pub fn Cpu(comptime config: Config) type {
             self.readNextByte();
 
             const cond = switch (self.state.op) {
-                .OpBpl => !self.reg.getFlag("N"),
-                .OpBmi => self.reg.getFlag("N"),
-                .OpBvc => !self.reg.getFlag("V"),
-                .OpBvs => self.reg.getFlag("V"),
-                .OpBcc => !self.reg.getFlag("C"),
-                .OpBcs => self.reg.getFlag("C"),
-                .OpBne => !self.reg.getFlag("Z"),
-                .OpBeq => self.reg.getFlag("Z"),
+                .op_bpl => !self.reg.getFlag("N"),
+                .op_bmi => self.reg.getFlag("N"),
+                .op_bvc => !self.reg.getFlag("V"),
+                .op_bvs => self.reg.getFlag("V"),
+                .op_bcc => !self.reg.getFlag("C"),
+                .op_bcs => self.reg.getFlag("C"),
+                .op_bne => !self.reg.getFlag("Z"),
+                .op_beq => self.reg.getFlag("Z"),
 
                 else => unreachable,
             };
@@ -458,25 +457,25 @@ pub fn Cpu(comptime config: Config) type {
 
         fn runCycle3Special(self: *Self) void {
             switch (self.state.op) {
-                .OpJmp => {
+                .op_jmp => {
                     std.debug.assert(self.state.opcode == 0x6c);
                     self.state.c_byte = self.mem.read(self.state.c_addr);
                 },
-                .OpJsr => self.pushStack(@truncate(u8, self.reg.pc >> 8)),
-                .OpPla => {
+                .op_jsr => self.pushStack(@truncate(u8, self.reg.pc >> 8)),
+                .op_pla => {
                     self.reg.a = self.readStack();
                     self.reg.setFlagsNZ(self.reg.a);
                     self.finishInstruction();
                 },
-                .OpPlp => {
+                .op_plp => {
                     self.reg.p = self.readStack();
                     self.finishInstruction();
                 },
-                .OpRti => {
+                .op_rti => {
                     self.reg.p = self.readStack();
                     self.reg.s +%= 1;
                 },
-                .OpRts => {
+                .op_rts => {
                     flags.setMask(u16, &self.reg.pc, self.readStack(), 0xff);
                     self.reg.s +%= 1;
                 },
@@ -489,7 +488,7 @@ pub fn Cpu(comptime config: Config) type {
             self.state.c_byte = self.mem.read(self.state.c_addr);
             if (register > low) {
                 self.state.c_addr +%= 0x100;
-            } else if (self.state.access == .Read) {
+            } else if (self.state.access == .read) {
                 self.execOpcode();
             }
         }
@@ -515,7 +514,7 @@ pub fn Cpu(comptime config: Config) type {
 
         fn runCycle4Special(self: *Self) void {
             switch (self.state.op) {
-                .OpJmp => {
+                .op_jmp => {
                     std.debug.assert(self.state.opcode == 0x6c);
 
                     flags.setMask(u16, &self.state.c_addr, self.state.c_addr +% 1, 0xff);
@@ -525,12 +524,12 @@ pub fn Cpu(comptime config: Config) type {
                     self.reg.pc = (high << 8) | low;
                     self.finishInstruction();
                 },
-                .OpJsr => self.pushStack(@truncate(u8, self.reg.pc)),
-                .OpRti => {
+                .op_jsr => self.pushStack(@truncate(u8, self.reg.pc)),
+                .op_rti => {
                     flags.setMask(u16, &self.reg.pc, self.readStack(), 0xff);
                     self.reg.s +%= 1;
                 },
-                .OpRts => flags.setMask(u16, &self.reg.pc, @as(u16, self.readStack()) << 8, 0xff00),
+                .op_rts => flags.setMask(u16, &self.reg.pc, @as(u16, self.readStack()) << 8, 0xff00),
                 else => unreachable,
             }
         }
@@ -545,7 +544,7 @@ pub fn Cpu(comptime config: Config) type {
             const byte = self.mem.read(self.state.c_addr);
             if (self.reg.y > self.state.c_byte) {
                 self.state.c_addr +%= 0x100;
-            } else if (self.state.access == .Read) {
+            } else if (self.state.access == .read) {
                 self.state.c_byte = byte;
                 self.execOpcode();
             }
@@ -559,17 +558,17 @@ pub fn Cpu(comptime config: Config) type {
 
         fn runCycle5Special(self: *Self) void {
             switch (self.state.op) {
-                .OpJsr => {
+                .op_jsr => {
                     const low = self.state.c_byte;
                     const high: u16 = self.mem.read(self.reg.pc);
                     self.reg.pc = (high << 8) | low;
                     self.finishInstruction();
                 },
-                .OpRti => {
+                .op_rti => {
                     flags.setMask(u16, &self.reg.pc, @as(u16, self.readStack()) << 8, 0xff00);
                     self.finishInstruction();
                 },
-                .OpRts => {
+                .op_rts => {
                     self.reg.pc +%= 1;
                     self.finishInstruction();
                 },
@@ -579,7 +578,7 @@ pub fn Cpu(comptime config: Config) type {
 
         /// Either return c_byte or, if it's an implied instruction, return A
         fn getByteMaybeAcc(self: Self) u8 {
-            if (self.state.addressing == .Implied) {
+            if (self.state.addressing == .implied) {
                 return self.reg.a;
             } else {
                 return self.state.c_byte;
@@ -587,7 +586,7 @@ pub fn Cpu(comptime config: Config) type {
         }
 
         fn setByteMaybeAcc(self: *Self, val: u8) void {
-            if (self.state.addressing == .Implied) {
+            if (self.state.addressing == .implied) {
                 self.reg.a = val;
             } else {
                 self.mem.write(self.state.c_addr, val);
@@ -599,17 +598,17 @@ pub fn Cpu(comptime config: Config) type {
             const addr = self.state.c_addr;
 
             switch (self.state.op) {
-                .OpBpl, .OpBmi, .OpBvc, .OpBvs, .OpBcc, .OpBcs, .OpBne, .OpBeq => unreachable,
-                .OpJmp, .OpJsr => unreachable,
+                .op_bpl, .op_bmi, .op_bvc, .op_bvs, .op_bcc, .op_bcs, .op_bne, .op_beq => unreachable,
+                .op_jmp, .op_jsr => unreachable,
 
-                .OpAdc => self.execOpcodeAdc(false),
+                .op_adc => self.execOpcodeAdc(false),
 
-                .OpAnd => {
+                .op_and => {
                     self.reg.a &= byte;
                     self.reg.setFlagsNZ(self.reg.a);
                 },
 
-                .OpAsl => {
+                .op_asl => {
                     const val = self.getByteMaybeAcc();
                     const modified = val << 1;
                     self.setByteMaybeAcc(modified);
@@ -617,44 +616,44 @@ pub fn Cpu(comptime config: Config) type {
                     self.reg.setFlag("C", val & 0x80 != 0);
                 },
 
-                .OpBit => {
+                .op_bit => {
                     const val = self.reg.a & byte;
                     self.reg.setFlags("NVZ", (byte & 0xc0) | @as(u8, @boolToInt(val == 0)) << 1);
                 },
 
-                .OpClc => self.reg.setFlag("C", false),
-                .OpCld => self.reg.setFlag("D", false),
-                .OpCli => self.reg.setFlag("I", false),
-                .OpClv => self.reg.setFlag("V", false),
+                .op_clc => self.reg.setFlag("C", false),
+                .op_cld => self.reg.setFlag("D", false),
+                .op_cli => self.reg.setFlag("I", false),
+                .op_clv => self.reg.setFlag("V", false),
 
-                .OpCmp => self.execOpcodeCmp(self.reg.a),
-                .OpCpx => self.execOpcodeCmp(self.reg.x),
-                .OpCpy => self.execOpcodeCmp(self.reg.y),
+                .op_cmp => self.execOpcodeCmp(self.reg.a),
+                .op_cpx => self.execOpcodeCmp(self.reg.x),
+                .op_cpy => self.execOpcodeCmp(self.reg.y),
 
-                .OpDec => {
+                .op_dec => {
                     self.mem.write(addr, byte -% 1);
                     self.reg.setFlagsNZ(byte -% 1);
                 },
-                .OpDex => self.execOpcodeDecReg(&self.reg.x),
-                .OpDey => self.execOpcodeDecReg(&self.reg.y),
+                .op_dex => self.execOpcodeDecReg(&self.reg.x),
+                .op_dey => self.execOpcodeDecReg(&self.reg.y),
 
-                .OpEor => {
+                .op_eor => {
                     self.reg.a ^= byte;
                     self.reg.setFlagsNZ(self.reg.a);
                 },
 
-                .OpInc => {
+                .op_inc => {
                     self.mem.write(addr, byte +% 1);
                     self.reg.setFlagsNZ(byte +% 1);
                 },
-                .OpInx => self.execOpcodeIncReg(&self.reg.x),
-                .OpIny => self.execOpcodeIncReg(&self.reg.y),
+                .op_inx => self.execOpcodeIncReg(&self.reg.x),
+                .op_iny => self.execOpcodeIncReg(&self.reg.y),
 
-                .OpLda => self.execOpcodeLd(&self.reg.a),
-                .OpLdx => self.execOpcodeLd(&self.reg.x),
-                .OpLdy => self.execOpcodeLd(&self.reg.y),
+                .op_lda => self.execOpcodeLd(&self.reg.a),
+                .op_ldx => self.execOpcodeLd(&self.reg.x),
+                .op_ldy => self.execOpcodeLd(&self.reg.y),
 
-                .OpLsr => {
+                .op_lsr => {
                     const val = self.getByteMaybeAcc();
                     const modified = val >> 1;
                     self.setByteMaybeAcc(modified);
@@ -662,21 +661,21 @@ pub fn Cpu(comptime config: Config) type {
                     self.reg.setFlag("C", val & 1 != 0);
                 },
 
-                .OpNop => {},
+                .op_nop => {},
 
-                .OpOra => {
+                .op_ora => {
                     self.reg.a |= byte;
                     self.reg.setFlagsNZ(self.reg.a);
                 },
 
-                .OpRol => {
+                .op_rol => {
                     const val = self.getByteMaybeAcc();
                     const modified = (val << 1) | self.reg.getFlags("C");
                     self.setByteMaybeAcc(modified);
                     self.reg.setFlagsNZ(modified);
                     self.reg.setFlag("C", val & 0x80 != 0);
                 },
-                .OpRor => {
+                .op_ror => {
                     const val = self.getByteMaybeAcc();
                     const modified = (val >> 1) | (self.reg.getFlags("C") << 7);
                     self.setByteMaybeAcc(modified);
@@ -684,22 +683,22 @@ pub fn Cpu(comptime config: Config) type {
                     self.reg.setFlag("C", val & 1 != 0);
                 },
 
-                .OpSbc => self.execOpcodeAdc(true),
+                .op_sbc => self.execOpcodeAdc(true),
 
-                .OpSec => self.reg.setFlag("C", true),
-                .OpSed => self.reg.setFlag("D", true),
-                .OpSei => self.reg.setFlag("I", true),
+                .op_sec => self.reg.setFlag("C", true),
+                .op_sed => self.reg.setFlag("D", true),
+                .op_sei => self.reg.setFlag("I", true),
 
-                .OpSta => self.mem.write(addr, self.reg.a),
-                .OpStx => self.mem.write(addr, self.reg.x),
-                .OpSty => self.mem.write(addr, self.reg.y),
+                .op_sta => self.mem.write(addr, self.reg.a),
+                .op_stx => self.mem.write(addr, self.reg.x),
+                .op_sty => self.mem.write(addr, self.reg.y),
 
-                .OpTax => self.execOpcodeTransferReg(self.reg.a, &self.reg.x),
-                .OpTay => self.execOpcodeTransferReg(self.reg.a, &self.reg.y),
-                .OpTsx => self.execOpcodeTransferReg(self.reg.s, &self.reg.x),
-                .OpTxa => self.execOpcodeTransferReg(self.reg.x, &self.reg.a),
-                .OpTxs => self.execOpcodeTransferReg(self.reg.x, &self.reg.s),
-                .OpTya => self.execOpcodeTransferReg(self.reg.y, &self.reg.a),
+                .op_tax => self.execOpcodeTransferReg(self.reg.a, &self.reg.x),
+                .op_tay => self.execOpcodeTransferReg(self.reg.a, &self.reg.y),
+                .op_tsx => self.execOpcodeTransferReg(self.reg.s, &self.reg.x),
+                .op_txa => self.execOpcodeTransferReg(self.reg.x, &self.reg.a),
+                .op_txs => self.execOpcodeTransferReg(self.reg.x, &self.reg.s),
+                .op_tya => self.execOpcodeTransferReg(self.reg.y, &self.reg.a),
                 else => unreachable,
             }
 

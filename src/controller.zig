@@ -10,8 +10,8 @@ const FieldFlagsDef = flags_.FieldFlagsDef;
 
 pub fn Controller(comptime method: IoMethod) type {
     switch (method) {
-        .Pure => return PureController,
-        .Sdl => return @import("sdl/controller.zig").Controller,
+        .pure => return PureController,
+        .sdl => return @import("sdl/controller.zig").Controller,
     }
 }
 

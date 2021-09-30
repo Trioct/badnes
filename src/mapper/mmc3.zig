@@ -27,16 +27,16 @@ pub fn Mapper(comptime config: Config) type {
         mirroring: ines.Mirroring,
 
         prg_bank_mode: enum(u1) {
-            Swap8000 = 0,
-            SwapC000 = 1,
-        } = .Swap8000,
+            swap_8000 = 0,
+            swap_c000 = 1,
+        } = .swap_8000,
 
         chr_bank_mode: enum(u1) {
             /// Two 2kb followed by four 1kb banks
-            TwoThenFour = 0,
+            two_then_four = 0,
             /// Four 1kb followed by two 2kb banks
-            FourThenTwo = 1,
-        } = .TwoThenFour,
+            four_then_two = 1,
+        } = .two_then_four,
 
         bank_registers: [8]u8 = std.mem.zeroes([8]u8),
         select_register: u3 = 0,
@@ -127,11 +127,11 @@ pub fn Mapper(comptime config: Config) type {
             self.prgs.setBank(3, self.prgs.bankCount() - 1);
 
             switch (self.prg_bank_mode) {
-                .Swap8000 => {
+                .swap_8000 => {
                     self.prgs.setBank(0, self.bank_registers[6]);
                     self.prgs.setBank(2, self.prgs.bankCount() - 2);
                 },
-                .SwapC000 => {
+                .swap_c000 => {
                     self.prgs.setBank(0, self.prgs.bankCount() - 2);
                     self.prgs.setBank(2, self.bank_registers[6]);
                 },
@@ -140,7 +140,7 @@ pub fn Mapper(comptime config: Config) type {
 
         fn updateChr(self: *Self) void {
             switch (self.chr_bank_mode) {
-                .TwoThenFour => {
+                .two_then_four => {
                     self.chrs.setConsecutiveBanks(0, 2, self.bank_registers[0]);
                     self.chrs.setConsecutiveBanks(2, 2, self.bank_registers[1]);
                     self.chrs.setBank(4, self.bank_registers[2]);
@@ -148,7 +148,7 @@ pub fn Mapper(comptime config: Config) type {
                     self.chrs.setBank(6, self.bank_registers[4]);
                     self.chrs.setBank(7, self.bank_registers[5]);
                 },
-                .FourThenTwo => {
+                .four_then_two => {
                     self.chrs.setBank(0, self.bank_registers[2]);
                     self.chrs.setBank(1, self.bank_registers[3]);
                     self.chrs.setBank(2, self.bank_registers[4]);
@@ -169,7 +169,7 @@ pub fn Mapper(comptime config: Config) type {
                     self.updatePrg();
                     self.updateChr();
                 },
-                0xa000...0xbffe => if (self.mirroring != .FourScreen) {
+                0xa000...0xbffe => if (self.mirroring != .four_screen) {
                     self.mirroring = @intToEnum(ines.Mirroring, @truncate(u1, val));
                 },
                 0xc000...0xdffe => self.irq_latch = val,

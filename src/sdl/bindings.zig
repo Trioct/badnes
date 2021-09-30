@@ -16,7 +16,7 @@ pub const createRenderer = wrap(c.SDL_CreateRenderer);
 pub const destroyWindow = wrap(c.SDL_DestroyWindow);
 pub const destroyRenderer = wrap(c.SDL_DestroyRenderer);
 
-pub const pollEvent = wrapWithOptions(c.SDL_PollEvent, .{ .int = .IntToZig });
+pub const pollEvent = wrapWithOptions(c.SDL_PollEvent, .{ .int = .int_to_zig });
 pub const getKeyboardState = wrapWithOptions(c.SDL_GetKeyboardState, .{
     .many_ptr_to_single = false,
 });
@@ -38,9 +38,9 @@ pub const SdlError = error{
 
 const WrapOptions = struct {
     int: ?enum {
-        IntToError,
-        IntToZig,
-    } = .IntToError,
+        int_to_error,
+        int_to_zig,
+    } = .int_to_error,
     optional_to_error: bool = true,
     many_ptr_to_single: bool = true,
 };
@@ -50,8 +50,8 @@ fn WrappedReturn(comptime T: type, comptime options: WrapOptions) type {
     switch (type_info) {
         .Int => if (options.int) |int| {
             switch (int) {
-                .IntToError => return SdlError!void,
-                .IntToZig => if (T == c_int) {
+                .int_to_error => return SdlError!void,
+                .int_to_zig => if (T == c_int) {
                     const c_int_info = @typeInfo(c_int).Int;
                     return @Type(.{
                         .Int = .{ .signedness = c_int_info.signedness, .bits = c_int_info.bits },
@@ -114,12 +114,12 @@ fn wrapReturn(ret_val: anytype, comptime options: WrapOptions) WrappedReturn(@Ty
     switch (type_info) {
         .Int => if (options.int) |int| {
             switch (int) {
-                .IntToError => if (ret_val == 0) {
+                .int_to_error => if (ret_val == 0) {
                     return;
                 } else {
                     return SdlError.Error;
                 },
-                .IntToZig => {
+                .int_to_zig => {
                     return @as(RetType, ret_val);
                 },
             }

@@ -102,31 +102,31 @@ pub fn Cpu(comptime config: Config) type {
         }
 
         const ValueReference = union(enum) {
-            None,
-            Register: *u8,
-            Memory: u16,
+            none,
+            register: *u8,
+            memory: u16,
 
             fn peek(ref: @This(), cpu: Cpu(config)) u8 {
                 return switch (ref) {
-                    .None => unreachable,
-                    .Register => |ptr| ptr.*,
-                    .Memory => |addr| cpu.mem.peek(addr),
+                    .none => unreachable,
+                    .register => |ptr| ptr.*,
+                    .memory => |addr| cpu.mem.peek(addr),
                 };
             }
 
             fn read(ref: @This(), cpu: *Cpu(config)) u8 {
                 return switch (ref) {
-                    .None => unreachable,
-                    .Register => |ptr| ptr.*,
-                    .Memory => |addr| cpu.mem.read(addr),
+                    .none => unreachable,
+                    .register => |ptr| ptr.*,
+                    .memory => |addr| cpu.mem.read(addr),
                 };
             }
 
             fn write(ref: @This(), cpu: *Cpu(config), val: u8) void {
                 switch (ref) {
-                    .None => unreachable,
-                    .Register => |ptr| ptr.* = val,
-                    .Memory => |addr| cpu.mem.write(addr, val),
+                    .none => unreachable,
+                    .register => |ptr| ptr.* = val,
+                    .memory => |addr| cpu.mem.write(addr, val),
                 }
             }
         };
@@ -134,63 +134,63 @@ pub fn Cpu(comptime config: Config) type {
         /// Runs an instruction
         pub fn runStep(self: *Self) void {
             const opcode = self.mem.read(self.reg.pc);
-            const instruction = Instruction(.Fast).decode(opcode);
+            const instruction = Instruction(.fast).decode(opcode);
 
             self.reg.pc +%= 1;
             const value: ValueReference = blk: {
                 switch (instruction.addressing) {
-                    .Accumulator => break :blk ValueReference{ .Register = &self.reg.a },
-                    .Absolute => {
-                        break :blk ValueReference{ .Memory = self.mem.readWord(self.reg.pc) };
+                    .accumulator => break :blk ValueReference{ .register = &self.reg.a },
+                    .absolute => {
+                        break :blk ValueReference{ .memory = self.mem.readWord(self.reg.pc) };
                     },
-                    .AbsoluteX => {
+                    .absoluteX => {
                         const val = self.mem.readWord(self.reg.pc);
                         self.cycles += @boolToInt(instruction.var_cycles and (val +% self.reg.x) & 0xff < val & 0xff);
-                        break :blk ValueReference{ .Memory = val +% self.reg.x };
+                        break :blk ValueReference{ .memory = val +% self.reg.x };
                     },
-                    .AbsoluteY => {
+                    .absoluteY => {
                         const val = self.mem.readWord(self.reg.pc);
                         self.cycles += @boolToInt(instruction.var_cycles and (val +% self.reg.y) & 0xff < val & 0xff);
-                        break :blk ValueReference{ .Memory = val +% self.reg.y };
+                        break :blk ValueReference{ .memory = val +% self.reg.y };
                     },
-                    .Immediate => break :blk ValueReference{ .Memory = self.reg.pc },
-                    .Implied => break :blk .None,
-                    .Indirect => {
+                    .immediate => break :blk ValueReference{ .memory = self.reg.pc },
+                    .implied => break :blk .none,
+                    .indirect => {
                         const addr_low = self.mem.read(self.reg.pc);
                         const addr_high = @as(u16, self.mem.read(self.reg.pc +% 1)) << 8;
 
                         const val_low = self.mem.read(addr_high | addr_low);
                         const val_high = self.mem.read(addr_high | (addr_low +% 1));
-                        break :blk ValueReference{ .Memory = (@as(u16, val_high) << 8) | val_low };
+                        break :blk ValueReference{ .memory = (@as(u16, val_high) << 8) | val_low };
                     },
-                    .IndirectX => {
+                    .indirectX => {
                         const zero_page = self.mem.read(self.reg.pc);
 
                         const val_low = self.mem.read(zero_page +% self.reg.x);
                         const val_high = self.mem.read(zero_page +% self.reg.x +% 1);
-                        break :blk ValueReference{ .Memory = (@as(u16, val_high) << 8) | val_low };
+                        break :blk ValueReference{ .memory = (@as(u16, val_high) << 8) | val_low };
                     },
-                    .IndirectY => {
+                    .indirectY => {
                         const zero_page = self.mem.read(self.reg.pc);
 
                         const val_low = self.mem.read(zero_page);
                         const val_high = self.mem.read(zero_page +% 1);
 
                         self.cycles += @boolToInt(instruction.var_cycles and (val_low +% self.reg.y) < val_low);
-                        break :blk ValueReference{ .Memory = ((@as(u16, val_high) << 8) | val_low) +% self.reg.y };
+                        break :blk ValueReference{ .memory = ((@as(u16, val_high) << 8) | val_low) +% self.reg.y };
                     },
-                    .Relative => break :blk ValueReference{ .Memory = self.reg.pc },
-                    .ZeroPage => {
+                    .relative => break :blk ValueReference{ .memory = self.reg.pc },
+                    .zeroPage => {
                         const zero_page = self.mem.read(self.reg.pc);
-                        break :blk ValueReference{ .Memory = zero_page };
+                        break :blk ValueReference{ .memory = zero_page };
                     },
-                    .ZeroPageX => {
+                    .zeroPageX => {
                         const zero_page = self.mem.read(self.reg.pc);
-                        break :blk ValueReference{ .Memory = zero_page +% self.reg.x };
+                        break :blk ValueReference{ .memory = zero_page +% self.reg.x };
                     },
-                    .ZeroPageY => {
+                    .zeroPageY => {
                         const zero_page = self.mem.read(self.reg.pc);
-                        break :blk ValueReference{ .Memory = zero_page +% self.reg.y };
+                        break :blk ValueReference{ .memory = zero_page +% self.reg.y };
                     },
                 }
             };
@@ -200,8 +200,8 @@ pub fn Cpu(comptime config: Config) type {
             }
 
             switch (instruction.op) {
-                .OpIll => {},
-                .OpAdc => {
+                .op_ill => {},
+                .op_adc => {
                     const original: u8 = value.read(self);
                     const sum: u9 = @as(u9, self.reg.a) +
                         @as(u9, original) +
@@ -216,11 +216,11 @@ pub fn Cpu(comptime config: Config) type {
 
                     self.reg.a = sum_u8;
                 },
-                .OpAnd => {
+                .op_and => {
                     self.reg.a &= value.read(self);
                     self.reg.setFlagsNZ(self.reg.a);
                 },
-                .OpAsl => {
+                .op_asl => {
                     const val = value.read(self);
                     const new = val << 1;
 
@@ -228,95 +228,95 @@ pub fn Cpu(comptime config: Config) type {
                     self.reg.setFlagsNZ(new);
                     self.reg.setFlag("C", (val & 0x80) != 0);
                 },
-                .OpBpl => self.branchRelative(!self.reg.getFlag("N"), value.read(self)),
-                .OpBmi => self.branchRelative(self.reg.getFlag("N"), value.read(self)),
-                .OpBvc => self.branchRelative(!self.reg.getFlag("V"), value.read(self)),
-                .OpBvs => self.branchRelative(self.reg.getFlag("V"), value.read(self)),
-                .OpBcc => self.branchRelative(!self.reg.getFlag("C"), value.read(self)),
-                .OpBcs => self.branchRelative(self.reg.getFlag("C"), value.read(self)),
-                .OpBne => self.branchRelative(!self.reg.getFlag("Z"), value.read(self)),
-                .OpBeq => self.branchRelative(self.reg.getFlag("Z"), value.read(self)),
-                .OpBit => {
+                .op_bpl => self.branchRelative(!self.reg.getFlag("N"), value.read(self)),
+                .op_bmi => self.branchRelative(self.reg.getFlag("N"), value.read(self)),
+                .op_bvc => self.branchRelative(!self.reg.getFlag("V"), value.read(self)),
+                .op_bvs => self.branchRelative(self.reg.getFlag("V"), value.read(self)),
+                .op_bcc => self.branchRelative(!self.reg.getFlag("C"), value.read(self)),
+                .op_bcs => self.branchRelative(self.reg.getFlag("C"), value.read(self)),
+                .op_bne => self.branchRelative(!self.reg.getFlag("Z"), value.read(self)),
+                .op_beq => self.branchRelative(self.reg.getFlag("Z"), value.read(self)),
+                .op_bit => {
                     const mem = value.read(self);
                     const val = self.reg.a & mem;
                     self.reg.setFlags("NVZ", (mem & 0xc0) | @as(u8, @boolToInt(val == 0)) << 1);
                 },
-                .OpBrk => {
+                .op_brk => {
                     var push_sp = self.reg.pc +% 1;
                     self.pushStack(@truncate(u8, push_sp >> 8));
                     self.pushStack(@truncate(u8, push_sp));
                     self.pushStack(self.reg.p | 0b0011_0000);
                     self.reg.pc = self.mem.readWord(0xfffe);
                 },
-                .OpClc => self.reg.setFlag("C", false),
-                .OpCld => self.reg.setFlag("D", false),
-                .OpCli => self.reg.setFlag("I", false),
-                .OpClv => self.reg.setFlag("V", false),
-                .OpCmp => {
+                .op_clc => self.reg.setFlag("C", false),
+                .op_cld => self.reg.setFlag("D", false),
+                .op_cli => self.reg.setFlag("I", false),
+                .op_clv => self.reg.setFlag("V", false),
+                .op_cmp => {
                     const val = value.read(self);
                     self.reg.setFlagsNZ(self.reg.a -% val);
                     self.reg.setFlag("C", self.reg.a >= val);
                 },
-                .OpCpx => {
+                .op_cpx => {
                     const val = value.read(self);
                     self.reg.setFlagsNZ(self.reg.x -% val);
                     self.reg.setFlag("C", self.reg.x >= val);
                 },
-                .OpCpy => {
+                .op_cpy => {
                     const val = value.read(self);
                     self.reg.setFlagsNZ(self.reg.y -% val);
                     self.reg.setFlag("C", self.reg.y >= val);
                 },
-                .OpDec => {
+                .op_dec => {
                     const val = value.read(self) -% 1;
                     value.write(self, val);
                     self.reg.setFlagsNZ(val);
                 },
-                .OpDex => {
+                .op_dex => {
                     self.reg.x -%= 1;
                     self.reg.setFlagsNZ(self.reg.x);
                 },
-                .OpDey => {
+                .op_dey => {
                     self.reg.y -%= 1;
                     self.reg.setFlagsNZ(self.reg.y);
                 },
-                .OpEor => {
+                .op_eor => {
                     self.reg.a ^= value.read(self);
                     self.reg.setFlagsNZ(self.reg.a);
                 },
-                .OpInc => {
+                .op_inc => {
                     const val = value.read(self) +% 1;
                     value.write(self, val);
                     self.reg.setFlagsNZ(val);
                 },
-                .OpInx => {
+                .op_inx => {
                     self.reg.x +%= 1;
                     self.reg.setFlagsNZ(self.reg.x);
                 },
-                .OpIny => {
+                .op_iny => {
                     self.reg.y +%= 1;
                     self.reg.setFlagsNZ(self.reg.y);
                 },
-                .OpJmp => self.reg.pc = value.Memory -% 2,
-                .OpJsr => {
+                .op_jmp => self.reg.pc = value.memory -% 2,
+                .op_jsr => {
                     var push_sp = self.reg.pc +% 1;
                     self.pushStack(@truncate(u8, push_sp >> 8));
                     self.pushStack(@truncate(u8, push_sp));
-                    self.reg.pc = value.Memory -% 2;
+                    self.reg.pc = value.memory -% 2;
                 },
-                .OpLda => {
+                .op_lda => {
                     self.reg.a = value.read(self);
                     self.reg.setFlagsNZ(self.reg.a);
                 },
-                .OpLdx => {
+                .op_ldx => {
                     self.reg.x = value.read(self);
                     self.reg.setFlagsNZ(self.reg.x);
                 },
-                .OpLdy => {
+                .op_ldy => {
                     self.reg.y = value.read(self);
                     self.reg.setFlagsNZ(self.reg.y);
                 },
-                .OpLsr => {
+                .op_lsr => {
                     const val = value.read(self);
                     const new = val >> 1;
 
@@ -324,19 +324,19 @@ pub fn Cpu(comptime config: Config) type {
                     self.reg.setFlagsNZ(new);
                     self.reg.setFlags("C", val & 1);
                 },
-                .OpNop => {},
-                .OpOra => {
+                .op_nop => {},
+                .op_ora => {
                     self.reg.a |= value.read(self);
                     self.reg.setFlagsNZ(self.reg.a);
                 },
-                .OpPha => self.pushStack(self.reg.a),
-                .OpPhp => self.pushStack(self.reg.p | 0b0011_0000),
-                .OpPla => {
+                .op_pha => self.pushStack(self.reg.a),
+                .op_php => self.pushStack(self.reg.p | 0b0011_0000),
+                .op_pla => {
                     self.reg.a = self.popStack();
                     self.reg.setFlagsNZ(self.reg.a);
                 },
-                .OpPlp => self.reg.p = self.popStack(),
-                .OpRol => {
+                .op_plp => self.reg.p = self.popStack(),
+                .op_rol => {
                     const val = value.read(self);
                     const new = (val << 1) | self.reg.getFlags("C");
 
@@ -344,7 +344,7 @@ pub fn Cpu(comptime config: Config) type {
                     self.reg.setFlagsNZ(new);
                     self.reg.setFlags("C", (val & 0x80) >> 7);
                 },
-                .OpRor => {
+                .op_ror => {
                     const val = value.read(self);
                     const new = (val >> 1) | (self.reg.getFlags("C") << 7);
 
@@ -352,18 +352,18 @@ pub fn Cpu(comptime config: Config) type {
                     self.reg.setFlagsNZ(new);
                     self.reg.setFlags("C", val & 1);
                 },
-                .OpRti => {
+                .op_rti => {
                     self.reg.p = self.popStack();
                     const low = self.popStack();
                     const high = @as(u16, self.popStack());
                     self.reg.pc = (high << 8) | low;
                 },
-                .OpRts => {
+                .op_rts => {
                     const low = self.popStack();
                     const high = @as(u16, self.popStack());
                     self.reg.pc = ((high << 8) | low) +% 1;
                 },
-                .OpSbc => {
+                .op_sbc => {
                     const original: u8 = value.read(self);
                     const dif: u9 = @as(u9, self.reg.a) -%
                         @as(u9, original) -%
@@ -378,30 +378,30 @@ pub fn Cpu(comptime config: Config) type {
 
                     self.reg.a = dif_u8;
                 },
-                .OpSec => self.reg.setFlag("C", true),
-                .OpSed => self.reg.setFlag("D", true),
-                .OpSei => self.reg.setFlag("I", true),
-                .OpSta => value.write(self, self.reg.a),
-                .OpStx => value.write(self, self.reg.x),
-                .OpSty => value.write(self, self.reg.y),
-                .OpTax => {
+                .op_sec => self.reg.setFlag("C", true),
+                .op_sed => self.reg.setFlag("D", true),
+                .op_sei => self.reg.setFlag("I", true),
+                .op_sta => value.write(self, self.reg.a),
+                .op_stx => value.write(self, self.reg.x),
+                .op_sty => value.write(self, self.reg.y),
+                .op_tax => {
                     self.reg.x = self.reg.a;
                     self.reg.setFlagsNZ(self.reg.x);
                 },
-                .OpTay => {
+                .op_tay => {
                     self.reg.y = self.reg.a;
                     self.reg.setFlagsNZ(self.reg.y);
                 },
-                .OpTsx => {
+                .op_tsx => {
                     self.reg.x = self.reg.s;
                     self.reg.setFlagsNZ(self.reg.x);
                 },
-                .OpTxa => {
+                .op_txa => {
                     self.reg.a = self.reg.x;
                     self.reg.setFlagsNZ(self.reg.a);
                 },
-                .OpTxs => self.reg.s = self.reg.x,
-                .OpTya => {
+                .op_txs => self.reg.s = self.reg.x,
+                .op_tya => {
                     self.reg.a = self.reg.y;
                     self.reg.setFlagsNZ(self.reg.a);
                 },
@@ -416,7 +416,7 @@ pub fn Cpu(comptime config: Config) type {
             }
         }
 
-        fn logInstruction(self: Self, instruction: Instruction(.Fast), value: ValueReference) void {
+        fn logInstruction(self: Self, instruction: Instruction(.fast), value: ValueReference) void {
             const op_str = opToString(instruction.op);
 
             const opcode = self.mem.peek(self.reg.pc -% 1);
@@ -436,58 +436,58 @@ pub fn Cpu(comptime config: Config) type {
             std.debug.print("{x:0>2} {x:0>2} {x:0>2}\t{s} ", .{ opcode, low, high, op_str });
 
             switch (instruction.addressing) {
-                .Accumulator => std.debug.print("A", .{}),
-                .Absolute => {
-                    std.debug.print("${x:0>4}    \t; ${0x:0>4} = #${x:0>2}", .{ value.Memory, value.peek(self) });
+                .accumulator => std.debug.print("A", .{}),
+                .absolute => {
+                    std.debug.print("${x:0>4}    \t; ${0x:0>4} = #${x:0>2}", .{ value.memory, value.peek(self) });
                 },
-                .AbsoluteX => {
+                .absoluteX => {
                     std.debug.print("${x:0>4},x  \t; ${0x:0>4} = #${x:0>2}\tx = #${x:0>2}", .{
-                        value.Memory,
+                        value.memory,
                         value.peek(self),
                         self.reg.x,
                     });
                 },
-                .AbsoluteY => {
+                .absoluteY => {
                     std.debug.print("${x:0>4},y  \t; ${0x:0>4} = #${x:0>2}\ty = #${x:0>2}", .{
-                        value.Memory,
+                        value.memory,
                         value.peek(self),
                         self.reg.y,
                     });
                 },
-                .Immediate => std.debug.print("#${x:0>2}", .{low}),
-                .Implied => {},
-                .Indirect => {
-                    std.debug.print("(${x:0>4})  \t; (${0x:0>4}) = ${x:0>4}", .{ address, value.Memory });
+                .immediate => std.debug.print("#${x:0>2}", .{low}),
+                .implied => {},
+                .indirect => {
+                    std.debug.print("(${x:0>4})  \t; (${0x:0>4}) = ${x:0>4}", .{ address, value.memory });
                 },
-                .IndirectX => {
+                .indirectX => {
                     std.debug.print("(${x:0>2},x)\t; (${0x:0>4},{x:0>2}) = ${x:0>4} = #${x:0>2}", .{
                         low,
                         self.reg.x,
-                        value.Memory,
+                        value.memory,
                         value.peek(self),
                     });
                 },
-                .IndirectY => {
+                .indirectY => {
                     std.debug.print("(${x:0>2}),y\t; (${0x:0>4}),{x:0>2} = ${x:0>4} = #${x:0>2}", .{
                         low,
                         self.reg.y,
-                        value.Memory,
+                        value.memory,
                         value.peek(self),
                     });
                 },
-                .Relative => {
+                .relative => {
                     const val = value.peek(self);
                     const new_pc = @bitCast(u16, @bitCast(i16, self.reg.pc) +% @bitCast(i8, val) +% 1);
                     std.debug.print("${x:0>2}      \t; PC ?= ${x:0>4}", .{ val, new_pc });
                 },
-                .ZeroPage => {
-                    std.debug.print("${x:0>2}      \t; ${0x:0>2} = #${x:0>2}", .{ value.Memory, value.peek(self) });
+                .zeroPage => {
+                    std.debug.print("${x:0>2}      \t; ${0x:0>2} = #${x:0>2}", .{ value.memory, value.peek(self) });
                 },
-                .ZeroPageX => {
-                    std.debug.print("${x:0>2},x    \t; ${0x:0>2} = #${x:0>2}", .{ value.Memory, value.peek(self) });
+                .zeroPageX => {
+                    std.debug.print("${x:0>2},x    \t; ${0x:0>2} = #${x:0>2}", .{ value.memory, value.peek(self) });
                 },
-                .ZeroPageY => {
-                    std.debug.print("${x:0>2},y    \t; ${0x:0>2} = #${x:0>2}", .{ value.Memory, value.peek(self) });
+                .zeroPageY => {
+                    std.debug.print("${x:0>2},y    \t; ${0x:0>2} = #${x:0>2}", .{ value.memory, value.peek(self) });
                 },
             }
 
@@ -526,7 +526,7 @@ pub fn Memory(comptime config: Config) type {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
                 0x2000...0x3fff => return self.ppu.reg.peek(@truncate(u3, addr)),
-                0x8000...0xffff => return self.cart.peekPrg(addr),
+                0x8000...0xffff => return self.cart.peekPrg(addr) orelse 0,
                 else => return 0,
             }
         }
@@ -534,10 +534,10 @@ pub fn Memory(comptime config: Config) type {
         pub fn read(self: Self, addr: u16) u8 {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)) orelse 0,
+                0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
                 0x4000...0x4013, 0x4015, 0x4017 => return self.apu.read(@truncate(u5, addr)),
                 0x4016 => return self.controller.getNextButton(),
-                0x4020...0xffff => return self.cart.readPrg(addr),
+                0x4020...0xffff => return self.cart.readPrg(addr) orelse 0,
                 else => {
                     //std.log.err("CPU: Unimplemented read memory address ({x:0>4})", .{addr});
                     return 0;

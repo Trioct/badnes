@@ -12,13 +12,13 @@ const video = @import("video.zig");
 const audio = @import("audio.zig");
 
 pub const Precision = enum {
-    Fast,
-    Accurate,
+    fast,
+    accurate,
 };
 
 pub const IoMethod = enum {
-    Pure,
-    Sdl,
+    pure,
+    sdl,
 };
 
 pub const Config = struct {

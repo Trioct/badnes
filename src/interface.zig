@@ -45,15 +45,15 @@ pub fn checkAllInterfaces() void {
 
     comptime {
         checkSameInterfaces(
-            Cpu(.{ .precision = .Fast, .method = .Pure }),
-            Cpu(.{ .precision = .Accurate, .method = .Pure }),
+            Cpu(.{ .precision = .fast, .method = .pure }),
+            Cpu(.{ .precision = .accurate, .method = .pure }),
         );
     }
 
     comptime {
         checkSameInterfaces(
-            Ppu(.{ .precision = .Fast, .method = .Pure }),
-            Ppu(.{ .precision = .Accurate, .method = .Pure }),
+            Ppu(.{ .precision = .fast, .method = .pure }),
+            Ppu(.{ .precision = .accurate, .method = .pure }),
         );
     }
 }

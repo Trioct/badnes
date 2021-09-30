@@ -25,10 +25,10 @@ pub fn Mapper(comptime config: Config) type {
         prgs: common.Prgs,
         chrs: common.Chrs,
         mirroring: enum(u2) {
-            OneScreenLower = 0,
-            OneScreenUpper = 1,
-            Vertical = 2,
-            Horizontal = 3,
+            one_screen_lower = 0,
+            one_screen_upper = 1,
+            vertical = 2,
+            horizontal = 3,
         },
 
         last_write_cycle: usize = 0,
@@ -36,15 +36,15 @@ pub fn Mapper(comptime config: Config) type {
         write_count: u3 = 0,
 
         prg_bank_mode: enum {
-            PrgSwitchBoth,
-            PrgFixFirst,
-            PrgFixLast,
-        } = .PrgFixLast,
+            prg_switch_both,
+            prg_fix_first,
+            prg_fix_last,
+        } = .prg_fix_last,
 
         chr_bank_mode: enum(u1) {
-            ChrSwitchBoth = 0,
-            ChrSwitchSeparate = 1,
-        } = .ChrSwitchBoth,
+            chr_switch_both = 0,
+            chr_switch_separate = 1,
+        } = .chr_switch_both,
 
         prg_bank: u4 = 0,
         chr_bank0: u5 = 0,
@@ -82,10 +82,10 @@ pub fn Mapper(comptime config: Config) type {
             const self = common.fromGeneric(Self, config, generic);
 
             return switch (self.mirroring) {
-                .OneScreenLower => @truncate(u12, addr & 0x3ff),
-                .OneScreenUpper => @truncate(u12, 0x400 | (addr & 0x3ff)),
-                .Vertical => @truncate(u12, addr & 0x7ff),
-                .Horizontal => @truncate(u12, addr & 0xbff),
+                .one_screen_lower => @truncate(u12, addr & 0x3ff),
+                .one_screen_upper => @truncate(u12, 0x400 | (addr & 0x3ff)),
+                .vertical => @truncate(u12, addr & 0x7ff),
+                .horizontal => @truncate(u12, addr & 0xbff),
             };
         }
 
@@ -116,12 +116,12 @@ pub fn Mapper(comptime config: Config) type {
 
         fn updatePrg(self: *Self) void {
             switch (self.prg_bank_mode) {
-                .PrgSwitchBoth => self.prgs.setConsecutiveBanks(0, 2, self.prg_bank),
-                .PrgFixFirst => {
+                .prg_switch_both => self.prgs.setConsecutiveBanks(0, 2, self.prg_bank),
+                .prg_fix_first => {
                     self.prgs.setBank(0, 0);
                     self.prgs.setBank(1, self.prg_bank);
                 },
-                .PrgFixLast => {
+                .prg_fix_last => {
                     self.prgs.setBank(0, self.prg_bank);
                     self.prgs.setBank(1, self.prgs.bankCount() - 1);
                 },
@@ -130,10 +130,10 @@ pub fn Mapper(comptime config: Config) type {
 
         fn updateChr(self: *Self) void {
             switch (self.chr_bank_mode) {
-                .ChrSwitchBoth => {
+                .chr_switch_both => {
                     self.chrs.setConsecutiveBanks(0, 2, self.chr_bank0 & 0x1e);
                 },
-                .ChrSwitchSeparate => {
+                .chr_switch_separate => {
                     self.chrs.setBank(0, self.chr_bank0);
                     self.chrs.setBank(1, self.chr_bank1);
                 },
@@ -151,7 +151,7 @@ pub fn Mapper(comptime config: Config) type {
                 self.shift_register = 0;
                 self.write_count = 0;
 
-                self.prg_bank_mode = .PrgFixLast;
+                self.prg_bank_mode = .prg_fix_last;
                 self.updatePrg();
 
                 return;
@@ -166,9 +166,9 @@ pub fn Mapper(comptime config: Config) type {
                     0x8000...0x9fff => {
                         self.mirroring = @intToEnum(@TypeOf(self.mirroring), @truncate(u2, final_val));
                         self.prg_bank_mode = switch (@truncate(u2, final_val >> 2)) {
-                            0, 1 => .PrgSwitchBoth,
-                            2 => .PrgFixFirst,
-                            3 => .PrgFixLast,
+                            0, 1 => .prg_switch_both,
+                            2 => .prg_fix_first,
+                            3 => .prg_fix_last,
                         };
                         self.chr_bank_mode = @intToEnum(@TypeOf(self.chr_bank_mode), @truncate(u1, final_val >> 4));
 

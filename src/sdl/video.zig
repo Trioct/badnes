@@ -43,8 +43,8 @@ pub const Context = struct {
 
     pub const DrawOptions = struct {
         timing: enum {
-            Untimed,
-            Timed,
+            untimed,
+            timed,
         },
         // ~1/60
         frametime: f32 = (4 * (261 * 341 + 340.5)) / 21477272.0,
@@ -59,8 +59,8 @@ pub const Context = struct {
         var passed = now - self.last_frame_time;
 
         switch (draw_options.timing) {
-            .Untimed => {},
-            .Timed => if (to_sleep > 0) {
+            .untimed => {},
+            .timed => if (to_sleep > 0) {
                 time.sleep(@intCast(u64, to_sleep));
                 passed += to_sleep;
             },
