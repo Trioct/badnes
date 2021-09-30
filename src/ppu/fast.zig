@@ -29,9 +29,9 @@ pub fn Ppu(comptime config: Config) type {
         cycle: u9 = 0,
 
         // internal registers
-        v: Address = .{ .value = 0 },
-        t: Address = .{ .value = 0 },
-        x: u3 = 0,
+        vram_addr: Address = .{ .value = 0 },
+        vram_temp: Address = .{ .value = 0 },
+        fine_x: u3 = 0,
         w: bool = false,
 
         sprite_list: SpriteList = SpriteList{},
@@ -130,28 +130,28 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         fn incCoarseX(self: *Self) void {
-            if ((self.v.value & @as(u15, 0x1f)) == 0x1f) {
-                self.v.value = (self.v.value & ~@as(u15, 0x1f)) ^ 0x400;
+            if ((self.vram_addr.value & @as(u15, 0x1f)) == 0x1f) {
+                self.vram_addr.value = (self.vram_addr.value & ~@as(u15, 0x1f)) ^ 0x400;
             } else {
-                self.v.value +%= 1;
+                self.vram_addr.value +%= 1;
             }
         }
 
         fn incCoarseY(self: *Self) void {
-            if ((self.v.value & 0x7000) != 0x7000) {
-                self.v.value += 0x1000;
+            if ((self.vram_addr.value & 0x7000) != 0x7000) {
+                self.vram_addr.value += 0x1000;
             } else {
-                self.v.value &= ~@as(u15, 0x7000);
-                var y = (self.v.value & @as(u15, 0x03e0)) >> 5;
+                self.vram_addr.value &= ~@as(u15, 0x7000);
+                var y = (self.vram_addr.value & @as(u15, 0x03e0)) >> 5;
                 if (y == 29) {
                     y = 0;
-                    self.v.value ^= 0x0800;
+                    self.vram_addr.value ^= 0x0800;
                 } else if (y == 31) {
                     y = 0;
                 } else {
                     y += 1;
                 }
-                self.v.value = (self.v.value & ~@as(u15, 0x03e0)) | (y << 5);
+                self.vram_addr.value = (self.vram_addr.value & ~@as(u15, 0x03e0)) | (y << 5);
             }
         }
 
@@ -166,7 +166,7 @@ pub fn Ppu(comptime config: Config) type {
                 241...260 => {},
                 261 => if (self.renderingEnabled() and self.scanline == 261 and self.cycle >= 280 and self.cycle <= 304) {
                     // set coarse y
-                    setMask(u15, &self.v.value, self.t.value, 0x7be0);
+                    setMask(u15, &self.vram_addr.value, self.vram_temp.value, 0x7be0);
                 } else {
                     self.runVisibleScanlineCycle();
                 },
@@ -212,7 +212,7 @@ pub fn Ppu(comptime config: Config) type {
                 self.incCoarseX();
             } else if (self.cycle == 257) {
                 // set coarse x
-                setMask(u15, &self.v.value, self.t.value, 0x41f);
+                setMask(u15, &self.vram_addr.value, self.vram_temp.value, 0x41f);
             }
         }
 
@@ -226,8 +226,8 @@ pub fn Ppu(comptime config: Config) type {
             const offset = if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "B" })) @as(u14, 0x1000) else 0;
             const pattern_table_byte1 = self.mem.peek(addr | offset);
             const pattern_table_byte2 = self.mem.peek(addr | 8 | offset);
-            const p1: u1 = @truncate(u1, pattern_table_byte1 >> (7 - @truncate(u3, self.cycle +% self.x)));
-            const p2: u1 = @truncate(u1, pattern_table_byte2 >> (7 - @truncate(u3, self.cycle +% self.x)));
+            const p1: u1 = @truncate(u1, pattern_table_byte1 >> (7 - @truncate(u3, self.cycle +% self.fine_x)));
+            const p2: u1 = @truncate(u1, pattern_table_byte2 >> (7 - @truncate(u3, self.cycle +% self.fine_x)));
 
             return p1 | (@as(u2, p2) << 1);
         }
@@ -257,8 +257,8 @@ pub fn Ppu(comptime config: Config) type {
 
         fn drawPixel(self: *Self) void {
             const reverted_v = blk: {
-                var old_v = self.v;
-                const sub: u2 = if (7 - @truncate(u3, self.cycle) >= self.x) 2 else 1;
+                var old_v = self.vram_addr;
+                const sub: u2 = if (7 - @truncate(u3, self.cycle) >= self.fine_x) 2 else 1;
                 if (old_v.coarseX() < sub) {
                     old_v.value ^= 0x400;
                 }
@@ -459,8 +459,8 @@ fn Registers(comptime config: Config) type {
                 },
                 7 => {
                     const prev = self.ppu_data;
-                    self.ppu_data = ppu.mem.read(@truncate(u14, ppu.v.value));
-                    ppu.v.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    self.ppu_data = ppu.mem.read(@truncate(u14, ppu.vram_addr.value));
+                    ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
                     return prev;
                 },
                 else => {},
@@ -473,32 +473,32 @@ fn Registers(comptime config: Config) type {
             var val_u15 = @as(u15, val);
             switch (i) {
                 0 => {
-                    setMask(u15, &ppu.t.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
+                    setMask(u15, &ppu.vram_temp.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
                 },
                 4 => {
                     ppu.mem.oam[self.oam_addr] = val;
                     self.oam_addr +%= 1;
                 },
                 5 => if (!ppu.w) {
-                    ppu.t.value = (ppu.t.value & ~@as(u15, 0x1f)) | (val >> 3);
-                    ppu.x = @truncate(u3, val);
+                    ppu.vram_temp.value = (ppu.vram_temp.value & ~@as(u15, 0x1f)) | (val >> 3);
+                    ppu.fine_x = @truncate(u3, val);
                     ppu.w = true;
                 } else {
-                    const old_t = ppu.t.value & ~@as(u15, 0b111_0011_1110_0000);
-                    ppu.t.value = old_t | ((val_u15 & 0xf8) << 5) | ((val_u15 & 7) << 12);
+                    const old_t = ppu.vram_temp.value & ~@as(u15, 0b111_0011_1110_0000);
+                    ppu.vram_temp.value = old_t | ((val_u15 & 0xf8) << 5) | ((val_u15 & 7) << 12);
                     ppu.w = false;
                 },
                 6 => if (!ppu.w) {
-                    setMask(u15, &ppu.t.value, (val_u15 & 0x3f) << 8, 0b0111_1111_0000_0000);
+                    setMask(u15, &ppu.vram_temp.value, (val_u15 & 0x3f) << 8, 0b0111_1111_0000_0000);
                     ppu.w = true;
                 } else {
-                    setMask(u15, &ppu.t.value, val_u15, 0xff);
-                    ppu.v.value = ppu.t.value;
+                    setMask(u15, &ppu.vram_temp.value, val_u15, 0xff);
+                    ppu.vram_addr.value = ppu.vram_temp.value;
                     ppu.w = false;
                 },
                 7 => {
-                    ppu.mem.write(@truncate(u14, ppu.v.value), val);
-                    ppu.v.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    ppu.mem.write(@truncate(u14, ppu.vram_addr.value), val);
+                    ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
                 },
                 else => {},
             }

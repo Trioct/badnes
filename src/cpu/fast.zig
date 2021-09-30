@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Registers = @import("common.zig").Registers;
+const common = @import("common.zig");
 
 const instruction_ = @import("../instruction.zig");
 const Op = instruction_.Op;
@@ -22,7 +22,7 @@ pub fn Cpu(comptime config: Config) type {
     return struct {
         const Self = @This();
 
-        reg: Registers,
+        reg: common.Registers,
         mem: Memory(config),
         ppu: *Ppu(config),
         apu: *Apu(config),
@@ -30,7 +30,7 @@ pub fn Cpu(comptime config: Config) type {
 
         pub fn init(console: *Console(config)) Self {
             return Self{
-                .reg = Registers.startup(),
+                .reg = common.Registers.startup(),
                 .mem = Memory(config).zeroes(&console.cart, &console.ppu, &console.apu, &console.controller),
                 .ppu = &console.ppu,
                 .apu = &console.apu,
@@ -412,10 +412,7 @@ pub fn Cpu(comptime config: Config) type {
 
             var i: usize = 0;
             while (i < @as(usize, instruction.cycles)) : (i += 1) {
-                self.apu.runCycle();
-                self.ppu.runCycle();
-                self.ppu.runCycle();
-                self.ppu.runCycle();
+                common.cpuCycled(self);
             }
         }
 
@@ -537,7 +534,7 @@ pub fn Memory(comptime config: Config) type {
         pub fn read(self: Self, addr: u16) u8 {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
+                0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)) orelse 0,
                 0x4000...0x4013, 0x4015, 0x4017 => return self.apu.read(@truncate(u5, addr)),
                 0x4016 => return self.controller.getNextButton(),
                 0x4020...0xffff => return self.cart.readPrg(addr),

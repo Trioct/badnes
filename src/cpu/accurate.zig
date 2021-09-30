@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Registers = @import("common.zig").Registers;
+const common = @import("common.zig");
 
 const instruction_ = @import("../instruction.zig");
 const Op = instruction_.Op;
@@ -25,7 +25,7 @@ pub fn Cpu(comptime config: Config) type {
     return struct {
         const Self = @This();
 
-        reg: Registers,
+        reg: common.Registers,
         mem: Memory(config),
         ppu: *Ppu(config),
         apu: *Apu(config),
@@ -75,7 +75,7 @@ pub fn Cpu(comptime config: Config) type {
 
         pub fn init(console: *Console(config)) Self {
             return Self{
-                .reg = Registers.startup(),
+                .reg = common.Registers.startup(),
                 .mem = Memory(config).zeroes(&console.cart, &console.ppu, &console.apu, &console.controller),
                 .ppu = &console.ppu,
                 .apu = &console.apu,
@@ -111,14 +111,8 @@ pub fn Cpu(comptime config: Config) type {
                 const oam_i: u8 = oam_addr +% @truncate(u8, i);
                 self.ppu.oam.primary[oam_i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
 
-                self.apu.runCycle();
-                self.ppu.runCycle();
-                self.ppu.runCycle();
-                self.ppu.runCycle();
-                self.apu.runCycle();
-                self.ppu.runCycle();
-                self.ppu.runCycle();
-                self.ppu.runCycle();
+                common.cpuCycled(self);
+                common.cpuCycled(self);
             }
         }
 
@@ -132,10 +126,7 @@ pub fn Cpu(comptime config: Config) type {
         }
 
         fn cycleSideEffects(self: *Self) void {
-            self.apu.runCycle();
-            self.ppu.runCycle();
-            self.ppu.runCycle();
-            self.ppu.runCycle();
+            common.cpuCycled(self);
             self.state.cycle +%= 1;
             self.cycles += 1;
         }
@@ -812,7 +803,7 @@ pub fn Memory(comptime config: Config) type {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
                 0x2000...0x3fff => return self.ppu.reg.peek(@truncate(u3, addr)),
-                0x4020...0xffff => return self.cart.peekPrg(addr),
+                0x4020...0xffff => return self.cart.peekPrg(addr) orelse 0,
                 else => return 0,
             }
         }
@@ -825,7 +816,7 @@ pub fn Memory(comptime config: Config) type {
                 0x4014 => self.ppu.reg.io_bus,
                 0x4016 => self.controller.getNextButton(),
                 0x4018...0x401f => return self.open_bus,
-                0x4020...0xffff => self.cart.readPrg(addr),
+                0x4020...0xffff => self.cart.readPrg(addr) orelse self.open_bus,
             };
             return self.open_bus;
         }

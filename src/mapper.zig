@@ -26,9 +26,10 @@ pub fn GenericMapper(comptime config: Config) type {
 
         deinitFn: fn (Self, *Allocator) void,
 
+        cpuCycledFn: ?(fn (*Self) void),
         mirrorNametableFn: fn (Self, u16) u12,
 
-        readPrgFn: fn (Self, u16) u8,
+        readPrgFn: fn (Self, u16) ?u8,
         readChrFn: fn (Self, u16) u8,
 
         writePrgFn: fn (*Self, u16, u8) void,
@@ -51,6 +52,7 @@ pub fn GenericMapper(comptime config: Config) type {
 
                         .deinitFn = T.deinitMem,
 
+                        .cpuCycledFn = if (@hasDecl(T, "cpuCycled")) T.cpuCycled else null,
                         .mirrorNametableFn = T.mirrorNametable,
 
                         .readPrgFn = T.readPrg,
@@ -65,61 +67,6 @@ pub fn GenericMapper(comptime config: Config) type {
 
         pub fn deinit(self: Self, allocator: *Allocator) void {
             self.deinitFn(self, allocator);
-        }
-
-        // I really don't need this because the type system will *probably* take care of it for me,
-        // but I want to be sure nothing unexpected happens
-        fn validateMapper(comptime T: type) void {
-            const type_info = @typeInfo(T);
-
-            assert(std.meta.activeTag(type_info) == @typeInfo(builtin.TypeInfo).Union.tag_type.?.Struct);
-
-            const InitFn = @typeInfo(@TypeOf(@as(T, undefined).initMem)).BoundFn;
-            const MirrorNametableFn = @typeInfo(@TypeOf(@as(T, undefined).mirrorNametable)).BoundFn;
-            const ReadPrgFn = @typeInfo(@TypeOf(@as(T, undefined).readPrg)).BoundFn;
-            const ReadChrFn = @typeInfo(@TypeOf(@as(T, undefined).readChr)).BoundFn;
-            const WritePrgFn = @typeInfo(@TypeOf(@as(T, undefined).writePrg)).BoundFn;
-            const WriteChrFn = @typeInfo(@TypeOf(@as(T, undefined).writeChr)).BoundFn;
-            const DeinitFn = @typeInfo(@TypeOf(@as(T, undefined).deinitMem)).BoundFn;
-
-            assert(InitFn.args.len == 4);
-            assert(InitFn.args[0].arg_type == *T);
-            assert(InitFn.args[1].arg_type == *Allocator);
-            assert(InitFn.args[2].arg_type == *Console(config));
-            assert(InitFn.args[3].arg_type == *ines.RomInfo);
-            assert(InitFn.return_type == Allocator.Error!void);
-
-            assert(MirrorNametableFn.args.len == 2);
-            assert(MirrorNametableFn.args[0].arg_type == Self);
-            assert(MirrorNametableFn.args[1].arg_type == u16);
-            assert(MirrorNametableFn.return_type == u12);
-
-            assert(ReadPrgFn.args.len == 2);
-            assert(ReadPrgFn.args[0].arg_type == Self);
-            assert(ReadPrgFn.args[1].arg_type == u16);
-            assert(ReadPrgFn.return_type == u8);
-
-            assert(ReadChrFn.args.len == 2);
-            assert(ReadChrFn.args[0].arg_type == Self);
-            assert(ReadChrFn.args[1].arg_type == u16);
-            assert(ReadChrFn.return_type == u8);
-
-            assert(WritePrgFn.args.len == 3);
-            assert(WritePrgFn.args[0].arg_type == *Self);
-            assert(WritePrgFn.args[1].arg_type == u16);
-            assert(WritePrgFn.args[2].arg_type == u8);
-            assert(WritePrgFn.return_type == void);
-
-            assert(WriteChrFn.args.len == 3);
-            assert(WriteChrFn.args[0].arg_type == *Self);
-            assert(WriteChrFn.args[1].arg_type == u16);
-            assert(WriteChrFn.args[2].arg_type == u8);
-            assert(WriteChrFn.return_type == void);
-
-            assert(DeinitFn.args.len == 2);
-            assert(DeinitFn.args[0].arg_type == Self);
-            assert(DeinitFn.args[1].arg_type == *Allocator);
-            assert(DeinitFn.return_type == void);
         }
     };
 }
@@ -146,7 +93,7 @@ pub fn UnimplementedMapper(comptime config: Config, comptime number: u8) type {
             @panic(msg);
         }
 
-        fn readPrg(_: G, _: u16) u8 {
+        fn readPrg(_: G, _: u16) ?u8 {
             @panic(msg);
         }
 
@@ -170,6 +117,7 @@ pub fn inits(comptime config: Config) [255]MapperInitFn(config) {
 
     types[0] = @import("mapper/nrom.zig").Mapper(config);
     types[1] = @import("mapper/mmc1.zig").Mapper(config);
+    types[4] = @import("mapper/mmc3.zig").Mapper(config);
 
     var result = [_]MapperInitFn(config){undefined} ** 255;
     for (types) |To, i| {

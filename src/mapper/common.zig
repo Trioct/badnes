@@ -21,7 +21,7 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
         const Self = @This();
 
         bytes: []u8,
-        writeable: bool,
+        writable: bool,
 
         selected: [selectable_banks]usize,
 
@@ -30,7 +30,7 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
                 if (bytes) |b| {
                     break :blk Self{
                         .bytes = b,
-                        .writeable = false,
+                        .writable = false,
                         .selected = [_]usize{undefined} ** selectable_banks,
                     };
                 } else {
@@ -38,7 +38,7 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
                     std.mem.set(u8, b, 0);
                     break :blk Self{
                         .bytes = b,
-                        .writeable = true,
+                        .writable = true,
                         .selected = [_]usize{undefined} ** selectable_banks,
                     };
                 }
@@ -67,12 +67,13 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
             self.selected[selected] = bank * size;
         }
 
-        pub fn setConsecutiveBanks(self: *Self, bank: usize, count: usize) void {
+        pub fn setConsecutiveBanks(self: *Self, selected: usize, count: usize, bank: usize) void {
             std.debug.assert(bank + count <= self.bankCount());
+            std.debug.assert(selected + count <= self.selected.len);
 
             var i: usize = 0;
             while (i < count) : (i += 1) {
-                self.setBank(i, bank + i);
+                self.setBank(selected + i, bank + i);
             }
         }
 
@@ -91,7 +92,7 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
         }
 
         pub fn write(self: *Self, addr: u16, val: u8) void {
-            if (self.writeable) {
+            if (self.writable) {
                 self.bytes[self.mapAddr(@truncate(FullAddr, addr))] = val;
             }
         }
@@ -100,6 +101,9 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
 
 pub const Sram = struct {
     bytes: ?[]u8,
+
+    writable: bool = true,
+    enabled: bool = true,
 
     pub fn init(allocator: *Allocator, mapped: bool) !Sram {
         const bytes = blk: {
@@ -111,6 +115,7 @@ pub const Sram = struct {
                 break :blk null;
             }
         };
+
         return Sram{
             .bytes = bytes,
         };
@@ -122,15 +127,29 @@ pub const Sram = struct {
         }
     }
 
-    pub fn read(self: Sram, addr: u16) u8 {
-        if (self.bytes) |bytes| {
-            return bytes[addr & 0x1fff];
-        } else {
-            return 0;
+    pub fn enable(self: *Sram) void {
+        self.enabled = true;
+    }
+
+    pub fn disable(self: *Sram) void {
+        self.enabled = false;
+    }
+
+    pub fn read(self: Sram, addr: u16) ?u8 {
+        if (self.enabled) {
+            if (self.bytes) |bytes| {
+                return bytes[addr & 0x1fff];
+            }
         }
+
+        return null;
     }
 
     pub fn write(self: *Sram, addr: u16, val: u8) void {
+        if (!(self.enabled and self.writable)) {
+            return;
+        }
+
         if (self.bytes) |bytes| {
             bytes[addr & 0x1fff] = val;
         }

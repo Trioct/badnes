@@ -44,6 +44,12 @@ pub fn Cart(comptime config: Config) type {
             std.log.info("Using mapper {:0>3}", .{info.mapper});
         }
 
+        pub inline fn cpuCycled(self: *Self) void {
+            if (self.mapper.cpuCycledFn) |f| {
+                f(&self.mapper);
+            }
+        }
+
         pub inline fn mirrorNametable(self: Self, addr: u16) u12 {
             return self.mapper.mirrorNametableFn(self.mapper, addr);
         }
@@ -51,7 +57,7 @@ pub fn Cart(comptime config: Config) type {
         // TODO
         pub const peekPrg = readPrg;
 
-        pub inline fn readPrg(self: Self, addr: u16) u8 {
+        pub inline fn readPrg(self: Self, addr: u16) ?u8 {
             return self.mapper.readPrgFn(self.mapper, addr);
         }
 

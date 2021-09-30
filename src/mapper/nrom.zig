@@ -45,12 +45,12 @@ pub fn Mapper(comptime config: Config) type {
             return common.mirrorNametable(self.mirroring, addr);
         }
 
-        pub fn readPrg(generic: G, addr: u16) u8 {
+        pub fn readPrg(generic: G, addr: u16) ?u8 {
             const self = common.fromGeneric(Self, config, generic);
             if (addr >= 0x8000) {
                 return self.prgs.read(addr);
             } else {
-                return 0;
+                return null;
             }
         }
 

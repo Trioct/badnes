@@ -4,6 +4,14 @@ const flags_ = @import("../flags.zig");
 const CreateFlags = flags_.CreateFlags;
 const FieldFlagsDef = flags_.FieldFlagsDef;
 
+pub fn cpuCycled(self: anytype) void {
+    self.apu.runCycle();
+    self.ppu.runCycle();
+    self.ppu.runCycle();
+    self.ppu.runCycle();
+    self.mem.cart.cpuCycled();
+}
+
 pub const Registers = struct {
     pc: u16,
     s: u8,

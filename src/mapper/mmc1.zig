@@ -89,10 +89,10 @@ pub fn Mapper(comptime config: Config) type {
             };
         }
 
-        pub fn readPrg(generic: G, addr: u16) u8 {
+        pub fn readPrg(generic: G, addr: u16) ?u8 {
             const self = common.fromGeneric(Self, config, generic);
             return switch (addr) {
-                0x4020...0x5fff => 0,
+                0x4020...0x5fff => null,
                 0x6000...0x7fff => self.sram.read(addr),
                 0x8000...0xffff => self.prgs.read(addr),
                 else => unreachable,
@@ -116,7 +116,7 @@ pub fn Mapper(comptime config: Config) type {
 
         fn updatePrg(self: *Self) void {
             switch (self.prg_bank_mode) {
-                .PrgSwitchBoth => self.prgs.setConsecutiveBanks(self.prg_bank, 2),
+                .PrgSwitchBoth => self.prgs.setConsecutiveBanks(0, 2, self.prg_bank),
                 .PrgFixFirst => {
                     self.prgs.setBank(0, 0);
                     self.prgs.setBank(1, self.prg_bank);
@@ -131,7 +131,7 @@ pub fn Mapper(comptime config: Config) type {
         fn updateChr(self: *Self) void {
             switch (self.chr_bank_mode) {
                 .ChrSwitchBoth => {
-                    self.chrs.setConsecutiveBanks(self.chr_bank0 & 0x1e, 2);
+                    self.chrs.setConsecutiveBanks(0, 2, self.chr_bank0 & 0x1e);
                 },
                 .ChrSwitchSeparate => {
                     self.chrs.setBank(0, self.chr_bank0);
