@@ -262,26 +262,21 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         pub fn runCycle(self: *Self) void {
-            if (self.scanline == 261 and self.cycle == 339 and self.odd_frame) {
-                self.cycle += 1;
-            }
+            defer self.runPostCycle();
 
-            if (!self.onRenderScanline()) {
-                self.runPostCycle();
+            if (!(self.onRenderScanline() and self.renderingEnabled())) {
                 return;
             }
 
-            if (self.renderingEnabled()) {
-                self.fetchNextByte();
-                if (self.scanline != 261) {
-                    self.spriteEvaluation();
-                }
-                if (self.scanline < 240 and self.cycle < 256) {
+            self.fetchNextByte();
+            if (self.scanline < 240) {
+                self.spriteEvaluation();
+                if (self.cycle < 256) {
                     self.drawPixel();
                 }
             }
 
-            if (self.renderingEnabled() and self.cycle > 0) {
+            if (self.cycle > 0) {
                 if (self.cycle > 257 and self.cycle < 321) {
                     self.reg.oam_addr = 0;
 
@@ -298,10 +293,13 @@ pub fn Ppu(comptime config: Config) type {
                     setMask(u15, &self.vram_addr.value, self.vram_temp.value, 0x41f);
                 }
             }
-            self.runPostCycle();
         }
 
         fn runPostCycle(self: *Self) void {
+            if (self.scanline == 261 and self.cycle == 339 and self.odd_frame) {
+                self.cycle += 1;
+            }
+
             self.cycle += 1;
             if (self.cycle == 341) {
                 self.cycle = 0;
