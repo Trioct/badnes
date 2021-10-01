@@ -72,7 +72,7 @@ pub fn main() anyerror!void {
             total_time += try video_context.drawFrame(.{ .timing = .timed });
 
             if (total_time > std.time.ns_per_s) {
-                std.debug.print("FPS: {}\n", .{frames});
+                //std.debug.print("FPS: {}\n", .{frames});
                 frames = 0;
                 total_time -= std.time.ns_per_s;
             }

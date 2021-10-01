@@ -48,7 +48,8 @@ pub fn Cpu(comptime config: Config) type {
         const IrqSource = packed struct {
             brk: bool,
             apu_frame_counter: bool,
-            padding: u6,
+            mapper: bool,
+            padding: u5,
 
             pub fn value(self: IrqSource) u8 {
                 return @bitCast(u8, self);

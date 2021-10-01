@@ -21,7 +21,7 @@ pub fn Mapper(comptime config: Config) type {
         cpu: *Cpu(config),
         ppu: *Ppu(config),
 
-        sram: common.Sram,
+        prg_ram: common.PrgRam,
         prgs: common.BankSwitcher(0x2000, 4),
         chrs: common.BankSwitcher(0x400, 8),
         mirroring: ines.Mirroring,
@@ -42,6 +42,7 @@ pub fn Mapper(comptime config: Config) type {
         select_register: u3 = 0,
 
         irq_enabled: bool = false,
+        irq_reload: bool = false,
         irq_latch: u8 = 0,
         irq_counter: u8 = 0,
         ppu_a12_low_cycles: u2 = 0,
@@ -58,7 +59,7 @@ pub fn Mapper(comptime config: Config) type {
                 .cpu = &console.cpu,
                 .ppu = &console.ppu,
 
-                .sram = try common.Sram.init(allocator, info.has_sram),
+                .prg_ram = try common.PrgRam.init(allocator, true, info.has_sram),
                 .prgs = try common.BankSwitcher(0x2000, 4).init(allocator, info.prg_rom),
                 .chrs = try common.BankSwitcher(0x400, 8).init(allocator, info.chr_rom),
                 .mirroring = info.mirroring,
@@ -71,6 +72,7 @@ pub fn Mapper(comptime config: Config) type {
         pub fn deinitMem(generic: G, allocator: *Allocator) void {
             const self = common.fromGeneric(Self, config, generic);
 
+            self.prg_ram.deinit(allocator);
             self.prgs.deinit(allocator);
             self.chrs.deinit(allocator);
             allocator.destroy(self);
@@ -84,11 +86,17 @@ pub fn Mapper(comptime config: Config) type {
             if (self.ppu.vram_addr.value & 0x1000 == 0) {
                 self.ppu_a12_low_cycles +|= 1;
             } else if (self.ppu_a12_low_cycles == 3) {
-                std.debug.print("high: ({}, {}) -> {x:0>4}\n", .{
-                    self.ppu.scanline,
-                    self.ppu.cycle,
-                    self.ppu.vram_addr.value,
-                });
+                if (self.irq_counter == 0 or self.irq_reload) {
+                    self.irq_counter = self.irq_latch;
+                } else {
+                    self.irq_counter -= 1;
+                }
+
+                if (self.irq_counter == 0 and self.irq_enabled) {
+                    self.cpu.setIrqSource("mapper");
+                }
+
+                self.ppu_a12_low_cycles = 0;
             }
         }
 
@@ -101,7 +109,7 @@ pub fn Mapper(comptime config: Config) type {
             const self = common.fromGeneric(Self, config, generic);
             return switch (addr) {
                 0x4020...0x5fff => null,
-                0x6000...0x7fff => self.sram.read(addr),
+                0x6000...0x7fff => self.prg_ram.read(addr),
                 0x8000...0xffff => self.prgs.read(addr),
                 else => unreachable,
             };
@@ -116,7 +124,7 @@ pub fn Mapper(comptime config: Config) type {
             const self = common.fromGeneric(Self, config, generic.*);
             switch (addr) {
                 0x4020...0x5fff => {},
-                0x6000...0x7fff => self.sram.write(addr, val),
+                0x6000...0x7fff => self.prg_ram.write(addr, val),
                 0x8000...0xffff => self.writeRom(addr, val),
                 else => unreachable,
             }
@@ -173,7 +181,10 @@ pub fn Mapper(comptime config: Config) type {
                     self.mirroring = @intToEnum(ines.Mirroring, @truncate(u1, val));
                 },
                 0xc000...0xdffe => self.irq_latch = val,
-                0xe000...0xfffe => self.irq_enabled = false,
+                0xe000...0xfffe => {
+                    self.irq_enabled = false;
+                    self.cpu.clearIrqSource("mapper");
+                },
                 else => unreachable,
             }
         }
@@ -192,10 +203,13 @@ pub fn Mapper(comptime config: Config) type {
                     self.updatePrg();
                 },
                 0xa001...0xbfff => {
-                    self.sram.writable = val & 0x40 != 0;
-                    self.sram.enabled = val & 0x80 != 0;
+                    self.prg_ram.writable = val & 0x40 == 0;
+                    self.prg_ram.enabled = val & 0x80 != 0;
                 },
-                0xc001...0xdfff => self.irq_counter = self.irq_latch,
+                0xc001...0xdfff => {
+                    self.irq_reload = true;
+                    self.irq_counter = 0;
+                },
                 0xe001...0xffff => self.irq_enabled = true,
                 else => unreachable,
             }

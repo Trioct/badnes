@@ -21,7 +21,7 @@ pub fn Mapper(comptime config: Config) type {
 
         cpu: *Cpu(config),
 
-        sram: common.Sram,
+        sram: common.PrgRam,
         prgs: common.Prgs,
         chrs: common.Chrs,
         mirroring: enum(u2) {
@@ -59,7 +59,7 @@ pub fn Mapper(comptime config: Config) type {
             self.* = Self{
                 .cpu = &console.cpu,
 
-                .sram = try common.Sram.init(allocator, info.has_sram),
+                .sram = try common.PrgRam.init(allocator, info.has_sram, info.has_sram),
                 .prgs = try common.Prgs.init(allocator, info.prg_rom),
                 .chrs = try common.Chrs.init(allocator, info.chr_rom),
                 .mirroring = @intToEnum(@TypeOf(self.mirroring), @enumToInt(info.mirroring)),

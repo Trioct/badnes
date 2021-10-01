@@ -14,7 +14,7 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
     const bank_bits = std.math.log2_int(usize, size);
     const BankAddr = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = bank_bits } });
 
-    const full_bits = bank_bits + 1;
+    const full_bits = bank_bits + std.math.log2_int(usize, selectable_banks);
     const FullAddr = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = full_bits } });
 
     return struct {
@@ -79,7 +79,7 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
 
         pub fn mapAddr(self: Self, addr: FullAddr) usize {
             var i: usize = 0;
-            const offset = blk: while (i <= size) : (i += 1) {
+            const offset = blk: while (i < selectable_banks) : (i += 1) {
                 if (addr >= i * size and addr < (i + 1) * size) {
                     break :blk self.selected[i];
                 }
@@ -99,13 +99,15 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
     };
 }
 
-pub const Sram = struct {
+pub const PrgRam = struct {
     bytes: ?[]u8,
 
     writable: bool = true,
     enabled: bool = true,
+    // TODO: used for savegames, etc.
+    persistent: bool = false,
 
-    pub fn init(allocator: *Allocator, mapped: bool) !Sram {
+    pub fn init(allocator: *Allocator, mapped: bool, persistent: bool) !PrgRam {
         const bytes = blk: {
             if (mapped) {
                 const b = try allocator.alloc(u8, 0x2000);
@@ -116,26 +118,27 @@ pub const Sram = struct {
             }
         };
 
-        return Sram{
+        return PrgRam{
             .bytes = bytes,
+            .persistent = persistent,
         };
     }
 
-    pub fn deinit(self: Sram, allocator: *Allocator) void {
+    pub fn deinit(self: PrgRam, allocator: *Allocator) void {
         if (self.bytes) |bytes| {
             allocator.free(bytes);
         }
     }
 
-    pub fn enable(self: *Sram) void {
+    pub fn enable(self: *PrgRam) void {
         self.enabled = true;
     }
 
-    pub fn disable(self: *Sram) void {
+    pub fn disable(self: *PrgRam) void {
         self.enabled = false;
     }
 
-    pub fn read(self: Sram, addr: u16) ?u8 {
+    pub fn read(self: PrgRam, addr: u16) ?u8 {
         if (self.enabled) {
             if (self.bytes) |bytes| {
                 return bytes[addr & 0x1fff];
@@ -145,7 +148,7 @@ pub const Sram = struct {
         return null;
     }
 
-    pub fn write(self: *Sram, addr: u16, val: u8) void {
+    pub fn write(self: *PrgRam, addr: u16, val: u8) void {
         if (!(self.enabled and self.writable)) {
             return;
         }
