@@ -25,7 +25,7 @@ Mappers:
 - [x] MMC1 / Mapper 001
 - [ ] UxROM / Mapper 002
 - [ ] CNROM / Mapper 003
-- [ ] MMC3 / Mapper 004
+- [x] MMC3 / Mapper 004
 - [ ] MMC5 / Mapper 005
 
 Few games are supported at the moment

@@ -83,11 +83,12 @@ pub fn Mapper(comptime config: Config) type {
 
             // we're waiting for 3 cpu cycles where vram_addr & 0x1000 == 0
             // and then a cycle where it goes high
-            if (self.ppu.vram_addr.value & 0x1000 == 0) {
+            if (self.ppu.mem.address_bus & 0x1000 == 0) {
                 self.ppu_a12_low_cycles +|= 1;
             } else if (self.ppu_a12_low_cycles == 3) {
                 if (self.irq_counter == 0 or self.irq_reload) {
                     self.irq_counter = self.irq_latch;
+                    self.irq_reload = false;
                 } else {
                     self.irq_counter -= 1;
                 }
@@ -95,7 +96,6 @@ pub fn Mapper(comptime config: Config) type {
                 if (self.irq_counter == 0 and self.irq_enabled) {
                     self.cpu.setIrqSource("mapper");
                 }
-
                 self.ppu_a12_low_cycles = 0;
             }
         }
@@ -178,7 +178,7 @@ pub fn Mapper(comptime config: Config) type {
                     self.updateChr();
                 },
                 0xa000...0xbffe => if (self.mirroring != .four_screen) {
-                    self.mirroring = @intToEnum(ines.Mirroring, @truncate(u1, val));
+                    self.mirroring = @intToEnum(ines.Mirroring, ~@truncate(u1, val));
                 },
                 0xc000...0xdffe => self.irq_latch = val,
                 0xe000...0xfffe => {

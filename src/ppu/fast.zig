@@ -519,6 +519,8 @@ fn Memory(comptime config: Config) type {
         palettes: [0x20]u8,
         oam: [0x100]u8,
 
+        address_bus: u14 = 0,
+
         fn init(cart: *Cart(config)) Self {
             return Self{
                 .cart = cart,
@@ -528,9 +530,16 @@ fn Memory(comptime config: Config) type {
             };
         }
 
-        pub const peek = read;
+        pub fn peek(self: Self, addr: u14) u8 {
+            return switch (addr) {
+                0x0000...0x1fff => self.cart.peekChr(addr),
+                0x2000...0x3eff => self.nametables[self.cart.mirrorNametable(addr)],
+                0x3f00...0x3fff => if (addr & 3 == 0) self.palettes[addr & 0x0c] else self.palettes[addr & 0x1f],
+            };
+        }
 
-        pub fn read(self: Self, addr: u14) u8 {
+        pub fn read(self: *Self, addr: u14) u8 {
+            self.address_bus = addr;
             return switch (addr) {
                 0x0000...0x1fff => self.cart.readChr(addr),
                 0x2000...0x3eff => self.nametables[self.cart.mirrorNametable(addr)],
@@ -539,6 +548,7 @@ fn Memory(comptime config: Config) type {
         }
 
         pub fn write(self: *Self, addr: u14, val: u8) void {
+            self.address_bus = addr;
             switch (addr) {
                 0x0000...0x1fff => self.cart.writeChr(addr, val),
                 0x2000...0x3eff => self.nametables[self.cart.mirrorNametable(addr)] = val,
