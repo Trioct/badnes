@@ -8,7 +8,8 @@ const Console = console_.Console;
 const Precision = console_.Precision;
 const IoMethod = console_.IoMethod;
 
-const sdl = @import("sdl/bindings.zig");
+const sdl_bindings = @import("sdl/bindings.zig");
+const Sdl = sdl_bindings.Sdl;
 const video = @import("video.zig");
 const audio = @import("audio.zig");
 
@@ -30,11 +31,11 @@ pub fn main() anyerror!void {
     };
     defer allocator.free(rom_path);
 
-    try sdl.init(.{sdl.c.SDL_INIT_VIDEO | sdl.c.SDL_INIT_AUDIO | sdl.c.SDL_INIT_EVENTS});
-    defer sdl.quit();
+    try Sdl.init(.{sdl_bindings.c.SDL_INIT_VIDEO | sdl_bindings.c.SDL_INIT_AUDIO | sdl_bindings.c.SDL_INIT_EVENTS});
+    defer Sdl.quit();
 
-    var video_context = try video.Context(.sdl).init("Badnes", 0, 0, 256 * 3, 240 * 3);
-    defer video_context.deinit();
+    var video_context = try video.Context(.sdl).init(allocator, "Badnes");
+    defer video_context.deinit(allocator);
 
     var audio_context = try audio.Context(.sdl).alloc(allocator);
     // TODO: need a errdefer too but lazy
@@ -51,18 +52,18 @@ pub fn main() anyerror!void {
     try console.loadRom(allocator, rom_path);
     console.cpu.reset();
 
-    var event: sdl.c.SDL_Event = undefined;
+    var event: sdl_bindings.c.SDL_Event = undefined;
 
     var total_time: i128 = 0;
     var frames: usize = 0;
     mloop: while (true) {
-        while (sdl.pollEvent(.{&event}) == 1) {
+        while (Sdl.pollEvent(.{&event}) == 1) {
             switch (event.type) {
-                sdl.c.SDL_KEYUP => switch (event.key.keysym.sym) {
-                    sdl.c.SDLK_q => break :mloop,
+                sdl_bindings.c.SDL_KEYUP => switch (event.key.keysym.sym) {
+                    sdl_bindings.c.SDLK_q => break :mloop,
                     else => {},
                 },
-                sdl.c.SDL_QUIT => break :mloop,
+                sdl_bindings.c.SDL_QUIT => break :mloop,
                 else => {},
             }
         }
@@ -81,7 +82,7 @@ pub fn main() anyerror!void {
             }
         }
 
-        // Batch run instructions/cycles to not get bogged down by sdl.pollEvent
+        // Batch run instructions/cycles to not get bogged down by Sdl.pollEvent
         var i: usize = 0;
         switch (build_options.precision) {
             .fast => {

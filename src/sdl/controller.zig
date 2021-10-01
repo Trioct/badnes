@@ -1,5 +1,6 @@
 const std = @import("std");
-const sdl = @import("bindings.zig");
+const bindings = @import("bindings.zig");
+const Sdl = bindings.Sdl;
 
 const flags_ = @import("../flags.zig");
 const CreateFlags = flags_.CreateFlags;
@@ -16,35 +17,35 @@ pub const Controller = struct {
     pub fn strobe(self: *Controller) void {
         const keys = blk: {
             var length: c_int = 0;
-            var ret: [*]const u8 = sdl.getKeyboardState(.{&length});
+            var ret: [*]const u8 = Sdl.getKeyboardState(.{&length});
             break :blk ret[0..@intCast(usize, length)];
         };
 
         self.buttons = 0;
         self.shift = 0;
 
-        if (keys[sdl.c.SDL_SCANCODE_RIGHT] != 0) {
+        if (keys[bindings.c.SDL_SCANCODE_RIGHT] != 0) {
             self.setButton("R");
         }
-        if (keys[sdl.c.SDL_SCANCODE_LEFT] != 0) {
+        if (keys[bindings.c.SDL_SCANCODE_LEFT] != 0) {
             self.setButton("L");
         }
-        if (keys[sdl.c.SDL_SCANCODE_DOWN] != 0) {
+        if (keys[bindings.c.SDL_SCANCODE_DOWN] != 0) {
             self.setButton("D");
         }
-        if (keys[sdl.c.SDL_SCANCODE_UP] != 0) {
+        if (keys[bindings.c.SDL_SCANCODE_UP] != 0) {
             self.setButton("U");
         }
-        if (keys[sdl.c.SDL_SCANCODE_A] != 0) {
+        if (keys[bindings.c.SDL_SCANCODE_A] != 0) {
             self.setButton("S");
         }
-        if (keys[sdl.c.SDL_SCANCODE_S] != 0) {
+        if (keys[bindings.c.SDL_SCANCODE_S] != 0) {
             self.setButton("s");
         }
-        if (keys[sdl.c.SDL_SCANCODE_Z] != 0) {
+        if (keys[bindings.c.SDL_SCANCODE_Z] != 0) {
             self.setButton("B");
         }
-        if (keys[sdl.c.SDL_SCANCODE_X] != 0) {
+        if (keys[bindings.c.SDL_SCANCODE_X] != 0) {
             self.setButton("A");
         }
     }

@@ -187,7 +187,7 @@ pub fn Mapper(comptime config: Config) type {
                         self.prg_bank = @truncate(u4, final_val);
                         self.updatePrg();
 
-                        if (final_val & 0x10 != 0) {
+                        if (final_val & 0x10 == 0) {
                             std.log.err("Mapper 1 requesting ram when not implemented", .{});
                         }
                     },

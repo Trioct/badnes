@@ -19,6 +19,7 @@ pub fn build(b: *std.build.Builder) void {
     const exe = b.addExecutable("badnes", "src/main.zig");
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
+    exe.linkSystemLibrary("opengl");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();
