@@ -34,7 +34,8 @@ pub fn main() anyerror!void {
     try Sdl.init(.{sdl_bindings.c.SDL_INIT_VIDEO | sdl_bindings.c.SDL_INIT_AUDIO | sdl_bindings.c.SDL_INIT_EVENTS});
     defer Sdl.quit();
 
-    var video_context = try video.Context(.sdl).init(allocator, "Badnes");
+    const sdl_context = if (build_options.imgui) .sdl_imgui else .sdl_basic;
+    var video_context = try video.Context(sdl_context).init(allocator, "Badnes");
     defer video_context.deinit(allocator);
 
     var audio_context = try audio.Context(.sdl).alloc(allocator);
@@ -46,7 +47,7 @@ pub fn main() anyerror!void {
         .precision = comptime std.meta.stringToEnum(Precision, @tagName(build_options.precision)).?,
         .method = .sdl,
     }).alloc();
-    console.init(video_context.frame_buffer, &audio_context);
+    console.init(video_context.getPixelBuffer(), &audio_context);
     defer console.deinit(allocator);
 
     try console.loadRom(allocator, rom_path);
@@ -70,7 +71,7 @@ pub fn main() anyerror!void {
         if (console.ppu.present_frame) {
             frames += 1;
             console.ppu.present_frame = false;
-            total_time += try video_context.drawFrame(.{ .timing = .timed });
+            total_time += try video_context.draw(.{ .timing = .timed });
 
             if (total_time > std.time.ns_per_s) {
                 //std.debug.print("FPS: {}\n", .{frames});

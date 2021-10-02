@@ -23,7 +23,7 @@ fn testRom(
     defer audio_context.deinit(testing.allocator);
 
     var console = Console(.{ .precision = precision, .method = .pure }).alloc();
-    console.init(video_context.frame_buffer, &audio_context);
+    console.init(video_context.getPixelBuffer(), &audio_context);
     defer console.deinit(testing.allocator);
 
     try console.loadRom(testing.allocator, "roms/nes-test-roms/" ++ rom);

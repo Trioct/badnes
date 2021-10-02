@@ -13,6 +13,8 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
+    const imgui = b.option(bool, "imgui", "Use imgui for extra features") orelse false;
+
     const precision = b.option(console.Precision, "precision", "Whether to prioritize performance or accuracy") orelse .accurate;
     const log_step = b.option(bool, "log-step", "Whether to log every cpu step to stdout") orelse false;
 
@@ -20,6 +22,11 @@ pub fn build(b: *std.build.Builder) void {
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
     exe.linkSystemLibrary("opengl");
+
+    if (imgui) {
+        linkImgui(b, exe);
+    }
+
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();
@@ -29,6 +36,7 @@ pub fn build(b: *std.build.Builder) void {
 
     exe_options.addOption(console.Precision, "precision", precision);
     exe_options.addOption(bool, "log_step", log_step);
+    exe_options.addOption(bool, "imgui", imgui);
 
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());
@@ -46,4 +54,35 @@ pub fn build(b: *std.build.Builder) void {
     tests.setBuildMode(.Debug);
     tests.addOptions("build_options", exe_options);
     test_step.dependOn(&tests.step);
+}
+
+fn linkImgui(b: *std.build.Builder, exe: *std.build.LibExeObjStep) void {
+    const imgui = b.addStaticLibrary("imgui", null);
+    imgui.linkLibC();
+    imgui.linkLibCpp();
+    imgui.linkSystemLibrary("SDL2");
+    imgui.linkSystemLibrary("opengl");
+    imgui.addIncludeDir("cimgui/imgui");
+
+    imgui.defineCMacro("IMGUI_DISABLE_OBSOLETE_FUNCTIONS", "1");
+    imgui.defineCMacro("IMGUI_IMPL_API", "extern \"C\"");
+    const source_files = [_]([]const u8){
+        "cimgui/imgui/imgui.cpp",
+        "cimgui/imgui/imgui_tables.cpp",
+        "cimgui/imgui/imgui_draw.cpp",
+        "cimgui/imgui/imgui_widgets.cpp",
+        "cimgui/imgui/imgui_demo.cpp",
+        "cimgui/imgui/backends/imgui_impl_opengl3.cpp",
+        "cimgui/imgui/backends/imgui_impl_sdl.cpp",
+        "cimgui/cimgui.cpp",
+    };
+
+    var flags = std.ArrayList([]const u8).init(std.heap.page_allocator);
+    if (b.is_release) flags.append("-Os") catch unreachable;
+
+    imgui.addCSourceFiles(source_files[0..], flags.items[0..]);
+
+    exe.addIncludeDir("cimgui");
+    exe.addIncludeDir("cimgui/generator/output");
+    exe.linkLibrary(imgui);
 }

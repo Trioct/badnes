@@ -1,5 +1,5 @@
 const std = @import("std");
-const FrameBuffer = @import("../video.zig").FrameBuffer;
+const PixelBuffer = @import("../video.zig").PixelBuffer;
 
 const console_ = @import("../console.zig");
 const Config = console_.Config;
@@ -43,17 +43,17 @@ pub fn Ppu(comptime config: Config) type {
         attribute_sr1: AttributeShiftRegister = .{},
         attribute_sr2: AttributeShiftRegister = .{},
 
-        frame_buffer: FrameBuffer(config.method),
+        pixel_buffer: *PixelBuffer(config.method),
         present_frame: bool = false,
 
-        pub fn init(console: *Console(config), frame_buffer: FrameBuffer(config.method)) Self {
+        pub fn init(console: *Console(config), pixel_buffer: *PixelBuffer(config.method)) Self {
             return Self{
                 .cart = &console.cart,
                 .cpu = &console.cpu,
                 .reg = Registers(config).init(&console.ppu),
                 .mem = Memory(config).init(&console.cart),
                 .oam = std.mem.zeroes(Oam),
-                .frame_buffer = frame_buffer,
+                .pixel_buffer = pixel_buffer,
             };
         }
 
@@ -384,7 +384,7 @@ pub fn Ppu(comptime config: Config) type {
             };
 
             const palette_byte = self.mem.read(addr) & 0x3f;
-            self.frame_buffer.putPixel(self.cycle, self.scanline, common.palette[palette_byte]);
+            self.pixel_buffer.putPixel(self.cycle, self.scanline, common.palette[palette_byte]);
         }
     };
 }

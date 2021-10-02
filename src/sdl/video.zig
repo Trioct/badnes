@@ -7,95 +7,139 @@ const c = bindings.c;
 const Sdl = bindings.Sdl;
 const Gl = bindings.Gl;
 
+const ImguiContext = @import("imgui.zig").ImguiContext;
+
 // currently using old style opengl for compatability
 // not that I understand opengl
 
-pub const Context = struct {
-    window: *Sdl.Window,
-    gl_context: Sdl.GLContext,
+pub fn Context(comptime using_imgui: bool) type {
+    const ExtensionContext = if (using_imgui) ImguiContext else BasicContext;
+    return struct {
+        const Self = @This();
 
-    frame_buffer: FrameBuffer,
+        window: *Sdl.Window,
+        gl_context: Sdl.GLContext,
+        extension_context: ExtensionContext,
 
-    last_frame_time: i128,
-    next_frame_time: i128,
+        last_frame_time: i128,
+        next_frame_time: i128,
 
-    pub fn init(allocator: *Allocator, title: [:0]const u8) !Context {
-        const width = 256 * 3;
-        const height = 240 * 3;
+        pub const DrawOptions = struct {
+            timing: enum {
+                untimed,
+                timed,
+            },
+            // ~1/60
+            frametime: f32 = (4 * (261 * 341 + 340.5)) / 21477272.0,
+        };
 
-        const window = try Sdl.createWindow(.{
-            title,
-            c.SDL_WINDOWPOS_CENTERED,
-            c.SDL_WINDOWPOS_CENTERED,
-            width,
-            height,
-            c.SDL_WINDOW_OPENGL,
-        });
-        errdefer Sdl.destroyWindow(.{window});
+        pub fn init(allocator: *Allocator, title: [:0]const u8) !Self {
+            const window = try Sdl.createWindow(.{
+                title,
+                c.SDL_WINDOWPOS_CENTERED,
+                c.SDL_WINDOWPOS_CENTERED,
+                256 * 3,
+                240 * 3,
+                c.SDL_WINDOW_OPENGL,
+            });
+            errdefer Sdl.destroyWindow(.{window});
 
-        try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_MAJOR_VERSION, 3 });
-        try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_MINOR_VERSION, 0 });
-        try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_FLAGS, 0 });
-        try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_PROFILE_MASK, c.SDL_GL_CONTEXT_PROFILE_CORE });
+            try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_MAJOR_VERSION, 3 });
+            try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_MINOR_VERSION, 0 });
+            try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_FLAGS, 0 });
+            try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_PROFILE_MASK, c.SDL_GL_CONTEXT_PROFILE_CORE });
 
-        try Sdl.glSetAttribute(.{ c.SDL_GL_DOUBLEBUFFER, 1 });
-        try Sdl.glSetAttribute(.{ c.SDL_GL_DEPTH_SIZE, 0 });
+            try Sdl.glSetAttribute(.{ c.SDL_GL_DOUBLEBUFFER, 1 });
+            try Sdl.glSetAttribute(.{ c.SDL_GL_DEPTH_SIZE, 0 });
 
-        const gl_context = try Sdl.glCreateContext(.{window});
-        errdefer Sdl.glDeleteContext(.{gl_context});
-        try Sdl.glMakeCurrent(.{ window, gl_context });
-        try Sdl.glSetSwapInterval(.{0});
+            const gl_context = try Sdl.glCreateContext(.{window});
+            errdefer Sdl.glDeleteContext(.{gl_context});
+            try Sdl.glMakeCurrent(.{ window, gl_context });
+            try Sdl.glSetSwapInterval(.{0});
 
-        try Gl.viewport(.{ 0, 0, width, height });
+            const extension_context = try ExtensionContext.init(allocator);
+
+            const now = time.nanoTimestamp();
+            return Self{
+                .window = window,
+                .gl_context = gl_context,
+                .extension_context = extension_context,
+
+                .last_frame_time = now,
+                .next_frame_time = now,
+            };
+        }
+
+        pub fn deinit(self: Self, allocator: *Allocator) void {
+            self.extension_context.deinit(allocator);
+
+            Sdl.glDeleteContext(.{self.gl_context});
+            Sdl.destroyWindow(.{self.window});
+        }
+
+        pub fn getPixelBuffer(self: *Self) *PixelBuffer {
+            return self.extension_context.getPixelBuffer();
+        }
+
+        pub fn draw(self: *Self, draw_options: DrawOptions) !i128 {
+            try self.extension_context.draw();
+            Sdl.glSwapWindow(.{self.window});
+
+            const frame_ns = @floatToInt(i128, time.ns_per_s * draw_options.frametime);
+            const now = time.nanoTimestamp();
+            const to_sleep = self.next_frame_time - now;
+            var passed = now - self.last_frame_time;
+
+            switch (draw_options.timing) {
+                .untimed => {},
+                .timed => if (to_sleep > 0) {
+                    time.sleep(@intCast(u64, to_sleep));
+                    passed += to_sleep;
+                },
+            }
+
+            self.next_frame_time += frame_ns;
+            self.last_frame_time += passed;
+
+            return passed;
+        }
+    };
+}
+
+const BasicContext = struct {
+    pixel_buffer: PixelBuffer,
+
+    pub fn init(allocator: *Allocator) !BasicContext {
+        try Gl.viewport(.{ 0, 0, 256 * 3, 240 * 3 });
         try Gl.enable(.{c.GL_TEXTURE_2D});
 
         try Gl.matrixMode(.{c.GL_PROJECTION});
         try Gl.loadIdentity();
 
-        const now = time.nanoTimestamp();
-
-        return Context{
-            .window = window,
-            .gl_context = gl_context,
-
-            .frame_buffer = try FrameBuffer.init(allocator, 256, 240, 3),
-
-            .last_frame_time = now,
-            .next_frame_time = now,
+        return BasicContext{
+            .pixel_buffer = try PixelBuffer.init(allocator, 256, 240),
         };
     }
 
-    pub fn deinit(self: Context, allocator: *Allocator) void {
-        self.frame_buffer.deinit(allocator);
-
-        Sdl.glDeleteContext(.{self.gl_context});
-        Sdl.destroyWindow(.{self.window});
+    pub fn deinit(self: BasicContext, allocator: *Allocator) void {
+        self.pixel_buffer.deinit(allocator);
     }
 
-    pub const DrawOptions = struct {
-        timing: enum {
-            untimed,
-            timed,
-        },
-        // ~1/60
-        frametime: f32 = (4 * (261 * 341 + 340.5)) / 21477272.0,
-    };
+    pub fn getPixelBuffer(self: *BasicContext) *PixelBuffer {
+        return &self.pixel_buffer;
+    }
 
-    fn drawFrameBuffers(self: *Context) !void {
+    pub fn draw(self: *BasicContext) !void {
         try Gl.pushClientAttrib(.{c.GL_CLIENT_ALL_ATTRIB_BITS});
         try Gl.pushMatrix();
 
         try Gl.enableClientState(.{c.GL_VERTEX_ARRAY});
         try Gl.enableClientState(.{c.GL_TEXTURE_COORD_ARRAY});
 
-        var width: c_int = undefined;
-        var height: c_int = undefined;
-        Sdl.getWindowSize(.{ self.window, &width, &height });
-
         try Gl.loadIdentity();
-        try Gl.ortho(.{ 0, @intToFloat(f64, width), @intToFloat(f64, height), 0, 0, 1 });
+        try Gl.ortho(.{ 0, 256 * 3, 240 * 3, 0, 0, 1 });
 
-        try self.frame_buffer.draw(0, 0);
+        try self.pixel_buffer.drawRaw(3);
 
         try Gl.bindTexture(.{ c.GL_TEXTURE_2D, 0 });
 
@@ -105,40 +149,16 @@ pub const Context = struct {
         try Gl.popMatrix();
         try Gl.popClientAttrib();
     }
-
-    pub fn drawFrame(self: *Context, draw_options: DrawOptions) !i128 {
-        try self.drawFrameBuffers();
-        Sdl.glSwapWindow(.{self.window});
-
-        const frame_ns = @floatToInt(i128, time.ns_per_s * draw_options.frametime);
-        const now = time.nanoTimestamp();
-        const to_sleep = self.next_frame_time - now;
-        var passed = now - self.last_frame_time;
-
-        switch (draw_options.timing) {
-            .untimed => {},
-            .timed => if (to_sleep > 0) {
-                time.sleep(@intCast(u64, to_sleep));
-                passed += to_sleep;
-            },
-        }
-
-        self.next_frame_time += frame_ns;
-        self.last_frame_time += passed;
-
-        return passed;
-    }
 };
 
-pub const FrameBuffer = struct {
+pub const PixelBuffer = struct {
     pixels: []u32 = null,
     width: u31,
     height: u31,
-    scale: u31,
 
     texture: c.GLuint,
 
-    fn init(allocator: *Allocator, width: u31, height: u31, scale: u31) !FrameBuffer {
+    pub fn init(allocator: *Allocator, width: u31, height: u31) !PixelBuffer {
         var texture: c.GLuint = undefined;
         try Gl.genTextures(.{ 1, &texture });
 
@@ -151,41 +171,26 @@ pub const FrameBuffer = struct {
 
         try Gl.bindTexture(.{ c.GL_TEXTURE_2D, 0 });
 
-        return FrameBuffer{
+        return PixelBuffer{
             .pixels = try allocator.alloc(u32, width * height),
             .texture = texture,
             .width = width,
             .height = height,
-            .scale = scale,
         };
     }
 
-    fn deinit(self: FrameBuffer, allocator: *Allocator) void {
+    pub fn deinit(self: PixelBuffer, allocator: *Allocator) void {
         allocator.free(self.pixels);
         Gl.deleteTextures(.{ 1, &self.texture }) catch {};
     }
 
-    pub fn putPixel(self: FrameBuffer, x: usize, y: usize, pixel: u32) void {
+    pub fn putPixel(self: PixelBuffer, x: usize, y: usize, pixel: u32) void {
         self.pixels[x + y * self.width] = pixel;
     }
 
-    pub fn draw(self: *FrameBuffer, x: u31, y: u31) !void {
-        const vertex_positions = [8]c_int{
-            x,                           y,
-            x + self.width * self.scale, y,
-            x + self.width * self.scale, y + self.height * self.scale,
-            x,                           y + self.height * self.scale,
-        };
-
-        const tex_coords = [8]c_int{
-            0, 0,
-            1, 0,
-            1, 1,
-            0, 1,
-        };
-
-        try Gl.bindTexture(.{ c.GL_TEXTURE_2D, self.texture });
-
+    /// Copies pixels into internal texture
+    /// Does not call bindTexture, caller must take care of it
+    pub fn copyTextureInternal(self: *PixelBuffer) !void {
         try Gl.texImage2D(.{
             c.GL_TEXTURE_2D,
             0,
@@ -197,6 +202,27 @@ pub const FrameBuffer = struct {
             c.GL_UNSIGNED_INT_8_8_8_8,
             @ptrCast(*const c_void, self.pixels),
         });
+    }
+
+    /// Draws directly to the current opengl fbo (probably the screen)
+    pub fn drawRaw(self: *PixelBuffer, scale: u31) !void {
+        const vertex_positions = [8]c_int{
+            0,                  0,
+            self.width * scale, 0,
+            self.width * scale, self.height * scale,
+            0,                  self.height * scale,
+        };
+
+        const tex_coords = [8]c_int{
+            0, 0,
+            1, 0,
+            1, 1,
+            0, 1,
+        };
+
+        try Gl.bindTexture(.{ c.GL_TEXTURE_2D, self.texture });
+
+        try self.copyTextureInternal();
 
         try Gl.vertexPointer(.{ 2, c.GL_INT, 0, &vertex_positions });
         try Gl.texCoordPointer(.{ 2, c.GL_INT, 0, &tex_coords });

@@ -48,11 +48,11 @@ pub fn Console(comptime config: Config) type {
 
         pub fn init(
             self: *Self,
-            frame_buffer: video.FrameBuffer(config.method),
+            pixel_buffer: *video.PixelBuffer(config.method),
             audio_context: *audio.Context(config.method),
         ) void {
             self.cart = Cart(config).init();
-            self.ppu = Ppu(config).init(self, frame_buffer);
+            self.ppu = Ppu(config).init(self, pixel_buffer);
             self.cpu = Cpu(config).init(self);
             self.apu = Apu(config).init(self, audio_context);
             self.controller = Controller(config.method){};
