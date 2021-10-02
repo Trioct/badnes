@@ -21,7 +21,7 @@ pub fn Mapper(comptime config: Config) type {
 
         cpu: *Cpu(config),
 
-        sram: common.PrgRam,
+        prg_ram: common.PrgRam,
         prgs: common.Prgs,
         chrs: common.Chrs,
         mirroring: enum(u2) {
@@ -59,7 +59,7 @@ pub fn Mapper(comptime config: Config) type {
             self.* = Self{
                 .cpu = &console.cpu,
 
-                .sram = try common.PrgRam.init(allocator, info.has_sram, info.has_sram),
+                .prg_ram = try common.PrgRam.init(allocator, true, info.has_sram),
                 .prgs = try common.Prgs.init(allocator, info.prg_rom),
                 .chrs = try common.Chrs.init(allocator, info.chr_rom),
                 .mirroring = @intToEnum(@TypeOf(self.mirroring), @enumToInt(info.mirroring)),
@@ -72,7 +72,7 @@ pub fn Mapper(comptime config: Config) type {
         pub fn deinitMem(generic: G, allocator: *Allocator) void {
             const self = common.fromGeneric(Self, config, generic);
 
-            self.sram.deinit(allocator);
+            self.prg_ram.deinit(allocator);
             self.prgs.deinit(allocator);
             self.chrs.deinit(allocator);
             allocator.destroy(self);
@@ -93,7 +93,7 @@ pub fn Mapper(comptime config: Config) type {
             const self = common.fromGeneric(Self, config, generic);
             return switch (addr) {
                 0x4020...0x5fff => null,
-                0x6000...0x7fff => self.sram.read(addr),
+                0x6000...0x7fff => self.prg_ram.read(addr),
                 0x8000...0xffff => self.prgs.read(addr),
                 else => unreachable,
             };
@@ -108,7 +108,7 @@ pub fn Mapper(comptime config: Config) type {
             const self = common.fromGeneric(Self, config, generic.*);
             switch (addr) {
                 0x4020...0x5fff => {},
-                0x6000...0x7fff => self.sram.write(addr, val),
+                0x6000...0x7fff => self.prg_ram.write(addr, val),
                 0x8000...0xffff => self.writeRom(addr, val),
                 else => unreachable,
             }
@@ -116,7 +116,7 @@ pub fn Mapper(comptime config: Config) type {
 
         fn updatePrg(self: *Self) void {
             switch (self.prg_bank_mode) {
-                .prg_switch_both => self.prgs.setConsecutiveBanks(0, 2, self.prg_bank),
+                .prg_switch_both => self.prgs.setConsecutiveBanks(0, 2, self.prg_bank & 0xe),
                 .prg_fix_first => {
                     self.prgs.setBank(0, 0);
                     self.prgs.setBank(1, self.prg_bank);
@@ -184,12 +184,10 @@ pub fn Mapper(comptime config: Config) type {
                         self.updateChr();
                     },
                     0xe000...0xffff => {
+                        self.prg_ram.enabled = final_val & 0x10 == 0;
                         self.prg_bank = @truncate(u4, final_val);
-                        self.updatePrg();
 
-                        if (final_val & 0x10 == 0) {
-                            std.log.err("Mapper 1 requesting ram when not implemented", .{});
-                        }
+                        self.updatePrg();
                     },
                     else => unreachable,
                 }
