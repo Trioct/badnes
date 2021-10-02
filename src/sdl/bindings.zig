@@ -1,28 +1,39 @@
 const std = @import("std");
+const build_options = @import("build_options");
+
 pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
     @cInclude("SDL2/SDL_audio.h");
     @cInclude("SDL2/SDL_opengl.h");
+
+    if (build_options.imgui) {
+        @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", "");
+        @cInclude("cimgui.h");
+        @cInclude("cimgui_impl.h");
+    }
 });
 
 pub const Sdl = struct {
+    const empty_options = .{ .sdl = .{} };
+
     pub const Window = c.SDL_Window;
     pub const GLContext = c.SDL_GLContext;
 
-    pub const init = wrap(c.SDL_Init, .{ .sdl = .{} });
-    pub const quit = wrap(c.SDL_Quit, .{ .sdl = .{} });
+    pub const init = wrap(c.SDL_Init, empty_options);
+    pub const quit = wrap(c.SDL_Quit, empty_options);
 
-    pub const glCreateContext = wrap(c.SDL_GL_CreateContext, .{ .sdl = .{} });
-    pub const glDeleteContext = wrap(c.SDL_GL_DeleteContext, .{ .sdl = .{} });
+    pub const glCreateContext = wrap(c.SDL_GL_CreateContext, empty_options);
+    pub const glDeleteContext = wrap(c.SDL_GL_DeleteContext, empty_options);
 
-    pub const glSetAttribute = wrap(c.SDL_GL_SetAttribute, .{ .sdl = .{} });
-    pub const glMakeCurrent = wrap(c.SDL_GL_MakeCurrent, .{ .sdl = .{} });
-    pub const glSetSwapInterval = wrap(c.SDL_GL_SetSwapInterval, .{ .sdl = .{} });
-    pub const glSwapWindow = wrap(c.SDL_GL_SwapWindow, .{ .sdl = .{} });
+    pub const glSetAttribute = wrap(c.SDL_GL_SetAttribute, empty_options);
+    pub const glMakeCurrent = wrap(c.SDL_GL_MakeCurrent, empty_options);
+    pub const glSetSwapInterval = wrap(c.SDL_GL_SetSwapInterval, empty_options);
+    pub const glSwapWindow = wrap(c.SDL_GL_SwapWindow, empty_options);
 
-    pub const createWindow = wrap(c.SDL_CreateWindow, .{ .sdl = .{} });
-    pub const destroyWindow = wrap(c.SDL_DestroyWindow, .{ .sdl = .{} });
-    pub const getWindowSize = wrap(c.SDL_GetWindowSize, .{ .sdl = .{} });
+    pub const createWindow = wrap(c.SDL_CreateWindow, empty_options);
+    pub const destroyWindow = wrap(c.SDL_DestroyWindow, empty_options);
+    pub const getWindowSize = wrap(c.SDL_GetWindowSize, empty_options);
+    pub const setWindowSize = wrap(c.SDL_SetWindowSize, empty_options);
 
     pub const pollEvent = wrap(c.SDL_PollEvent, .{ .sdl = .{ .int = .int_to_zig } });
     pub const getKeyboardState = wrap(c.SDL_GetKeyboardState, .{ .sdl = .{
@@ -30,50 +41,86 @@ pub const Sdl = struct {
     } });
 
     pub const openAudioDevice = wrap(c.SDL_OpenAudioDevice, .{ .sdl = .{ .int = null } });
-    pub const closeAudioDevice = wrap(c.SDL_CloseAudioDevice, .{ .sdl = .{} });
-    pub const pauseAudioDevice = wrap(c.SDL_PauseAudioDevice, .{ .sdl = .{} });
+    pub const closeAudioDevice = wrap(c.SDL_CloseAudioDevice, empty_options);
+    pub const pauseAudioDevice = wrap(c.SDL_PauseAudioDevice, empty_options);
 };
 
 pub const Gl = struct {
-    pub const viewport = wrap(c.glViewport, .{ .opengl = .{} });
-    pub const enable = wrap(c.glEnable, .{ .opengl = .{} });
+    const empty_options = .{ .opengl = .{} };
+
+    pub const viewport = wrap(c.glViewport, empty_options);
+    pub const enable = wrap(c.glEnable, empty_options);
 
     pub const clearColor = wrap(c.glClearColor, .{ .opengl = .{ .check_error = false } });
-    pub const clear = wrap(c.glClear, .{ .opengl = .{} });
+    pub const clear = wrap(c.glClear, empty_options);
 
-    pub const pushClientAttrib = wrap(c.glPushClientAttrib, .{ .opengl = .{} });
-    pub const popClientAttrib = wrap(c.glPopClientAttrib, .{ .opengl = .{} });
-    pub const enableClientState = wrap(c.glEnableClientState, .{ .opengl = .{} });
-    pub const disableClientState = wrap(c.glDisableClientState, .{ .opengl = .{} });
+    pub const pushClientAttrib = wrap(c.glPushClientAttrib, empty_options);
+    pub const popClientAttrib = wrap(c.glPopClientAttrib, empty_options);
+    pub const enableClientState = wrap(c.glEnableClientState, empty_options);
+    pub const disableClientState = wrap(c.glDisableClientState, empty_options);
 
-    pub const pushMatrix = wrap(c.glPushMatrix, .{ .opengl = .{} });
-    pub const popMatrix = wrap(c.glPopMatrix, .{ .opengl = .{} });
-    pub const loadIdentity = wrap(c.glLoadIdentity, .{ .opengl = .{} });
-    pub const ortho = wrap(c.glOrtho, .{ .opengl = .{} });
-    pub const matrixMode = wrap(c.glMatrixMode, .{ .opengl = .{} });
+    pub const pushMatrix = wrap(c.glPushMatrix, empty_options);
+    pub const popMatrix = wrap(c.glPopMatrix, empty_options);
+    pub const loadIdentity = wrap(c.glLoadIdentity, empty_options);
+    pub const ortho = wrap(c.glOrtho, empty_options);
+    pub const matrixMode = wrap(c.glMatrixMode, empty_options);
 
-    pub const genTextures = wrap(c.glGenTextures, .{ .opengl = .{} });
-    pub const deleteTextures = wrap(c.glDeleteTextures, .{ .opengl = .{} });
-    pub const bindTexture = wrap(c.glBindTexture, .{ .opengl = .{} });
-    pub const texImage2D = wrap(c.glTexImage2D, .{ .opengl = .{} });
-    pub const texParameteri = wrap(c.glTexParameteri, .{ .opengl = .{} });
+    pub const genTextures = wrap(c.glGenTextures, empty_options);
+    pub const deleteTextures = wrap(c.glDeleteTextures, empty_options);
+    pub const bindTexture = wrap(c.glBindTexture, empty_options);
+    pub const texImage2D = wrap(c.glTexImage2D, empty_options);
+    pub const texParameteri = wrap(c.glTexParameteri, empty_options);
 
-    pub const vertexPointer = wrap(c.glVertexPointer, .{ .opengl = .{} });
-    pub const texCoordPointer = wrap(c.glTexCoordPointer, .{ .opengl = .{} });
-    pub const drawArrays = wrap(c.glDrawArrays, .{ .opengl = .{} });
+    pub const vertexPointer = wrap(c.glVertexPointer, empty_options);
+    pub const texCoordPointer = wrap(c.glTexCoordPointer, empty_options);
+    pub const drawArrays = wrap(c.glDrawArrays, empty_options);
+};
+
+pub const Imgui = struct {
+    const empty_options = .{ .imgui = .{} };
+
+    pub const createContext = wrap(c.igCreateContext, empty_options);
+    pub const sdl2InitForOpengl = wrap(c.ImGui_ImplSDL2_InitForOpenGL, empty_options);
+    pub const opengl3Init = wrap(c.ImGui_ImplOpenGL3_Init, empty_options);
+
+    pub const sdl2Shutdown = wrap(c.ImGui_ImplSDL2_Shutdown, empty_options);
+    pub const opengl3Shutdown = wrap(c.ImGui_ImplOpenGL3_Shutdown, empty_options);
+
+    pub const styleColorsDark = wrap(c.igStyleColorsDark, empty_options);
+
+    pub const sdl2ProcessEvent = wrap(c.ImGui_ImplSDL2_ProcessEvent, .{ .imgui = .{ .bool_to_error = false } });
+
+    pub const opengl3NewFrame = wrap(c.ImGui_ImplOpenGL3_NewFrame, empty_options);
+    pub const sdl2NewFrame = wrap(c.ImGui_ImplSDL2_NewFrame, empty_options);
+    pub const newFrame = wrap(c.igNewFrame, empty_options);
+
+    pub const render = wrap(c.igRender, empty_options);
+    pub const opengl3RenderDrawData = wrap(c.ImGui_ImplOpenGL3_RenderDrawData, empty_options);
+    pub const getDrawData = wrap(c.igGetDrawData, empty_options);
+
+    pub const begin = wrap(c.igBegin, empty_options);
+    pub const end = wrap(c.igEnd, empty_options);
+
+    pub const image = wrap(c.igImage, empty_options);
 };
 
 pub const CError = error{
     SdlError,
     GlError,
+    ImguiError,
 };
+
+fn errorFromOptions(comptime options: WrapOptions) CError {
+    return switch (options) {
+        .sdl => CError.SdlError,
+        .opengl => CError.GlError,
+        .imgui => CError.ImguiError,
+    };
+}
 
 const WrapOptions = union(enum) {
     sdl: struct {
-        int: ?enum {
-            int_to_error,
-            int_to_zig,
-        } = .int_to_error,
+        int: ?IntConversion = .int_to_error,
         optional_to_error: bool = true,
         many_ptr_to_single: bool = true,
     },
@@ -82,12 +129,52 @@ const WrapOptions = union(enum) {
     opengl: struct {
         check_error: bool = true,
     },
+
+    imgui: struct {
+        bool_to_error: bool = true,
+    },
+
+    const IntConversion = enum {
+        int_to_error,
+        int_to_zig,
+    };
+
+    fn intConversion(comptime self: WrapOptions) ?IntConversion {
+        return switch (self) {
+            .sdl => |x| x.int,
+            .opengl, .imgui => null,
+        };
+    }
+
+    fn boolToError(comptime self: WrapOptions) bool {
+        return switch (self) {
+            .sdl => false,
+            .opengl => false,
+            .imgui => |x| x.bool_to_error,
+        };
+    }
+
+    fn optionalToError(comptime self: WrapOptions) bool {
+        return switch (self) {
+            .sdl => |x| x.optional_to_error,
+            .opengl => false,
+            .imgui => true,
+        };
+    }
+
+    fn manyPtrToSingle(comptime self: WrapOptions) bool {
+        return switch (self) {
+            .sdl => |x| x.many_ptr_to_single,
+            .opengl => false,
+            .imgui => true,
+        };
+    }
 };
 
 fn WrappedCallReturn(comptime T: type, comptime options: WrapOptions) type {
     const type_info = @typeInfo(T);
     switch (type_info) {
-        .Int => if (options.sdl.int) |int| {
+        .Int => if (comptime options.intConversion()) |int| {
             switch (int) {
                 .int_to_error => return CError!void,
                 .int_to_zig => if (T == c_int) {
@@ -102,13 +189,18 @@ fn WrappedCallReturn(comptime T: type, comptime options: WrapOptions) type {
         } else {
             return T;
         },
-        .Optional => |optional| if (options.sdl.optional_to_error) {
+        .Bool => if (comptime options.boolToError()) {
+            return CError!void;
+        } else {
+            return bool;
+        },
+        .Optional => |optional| if (comptime options.optionalToError()) {
             return CError!optional.child;
         } else {
             return T;
         },
         .Pointer => |pointer| switch (pointer.size) {
-            .C => if (options.sdl.many_ptr_to_single) {
+            .C => if (comptime options.manyPtrToSingle()) {
                 return CError!*pointer.child;
             } else {
                 return T;
@@ -121,10 +213,14 @@ fn WrappedCallReturn(comptime T: type, comptime options: WrapOptions) type {
 
 fn WrappedCheckedReturn(comptime T: type, comptime options: WrapOptions) type {
     switch (options) {
-        .sdl => return T,
-        .opengl => {
+        .sdl, .imgui => return T,
+        .opengl => |x| {
             std.debug.assert(T == void);
-            return CError!void;
+            if (x.check_error) {
+                return CError!void;
+            } else {
+                return void;
+            }
         },
     }
 }
@@ -165,12 +261,12 @@ fn wrapReturn(ret_val: anytype, comptime options: WrapOptions) WrappedCallReturn
     const RetType = WrappedCallReturn(T, options);
     const type_info = @typeInfo(@TypeOf(ret_val));
     switch (type_info) {
-        .Int => if (options.sdl.int) |int| {
+        .Int => if (comptime options.intConversion()) |int| {
             switch (int) {
                 .int_to_error => if (ret_val == 0) {
                     return;
                 } else {
-                    return CError.SdlError;
+                    return errorFromOptions(options);
                 },
                 .int_to_zig => {
                     return @as(RetType, ret_val);
@@ -179,21 +275,30 @@ fn wrapReturn(ret_val: anytype, comptime options: WrapOptions) WrappedCallReturn
         } else {
             return ret_val;
         },
-        .Optional => if (options.sdl.optional_to_error) {
+        .Bool => if (comptime options.boolToError()) {
+            if (ret_val) {
+                return;
+            } else {
+                return errorFromOptions(options);
+            }
+        } else {
+            return ret_val;
+        },
+        .Optional => if (comptime options.optionalToError()) {
             if (ret_val) |val| {
                 return val;
             } else {
-                return CError.SdlError;
+                return errorFromOptions(options);
             }
         } else {
             return ret_val;
         },
         .Pointer => |pointer| switch (pointer.size) {
-            .C => if (options.sdl.many_ptr_to_single) {
+            .C => if (comptime options.manyPtrToSingle()) {
                 if (ret_val != 0) {
                     return @ptrCast(*pointer.child, ret_val);
                 } else {
-                    return CError.SdlError;
+                    return errorFromOptions(options);
                 }
             } else {
                 return ret_val;
@@ -208,14 +313,14 @@ fn wrapPrintError(
     comptime options: WrapOptions,
     ret_val: anytype,
 ) WrappedCheckedReturn(@TypeOf(ret_val), options) {
+    const is_error =
+        switch (@typeInfo(@TypeOf(ret_val))) {
+        .ErrorUnion => std.meta.isError(ret_val),
+        else => false,
+    };
     switch (options) {
-        .sdl => {
-            switch (@typeInfo(@TypeOf(ret_val))) {
-                .ErrorUnion => if (std.meta.isError(ret_val)) {
-                    std.log.err("{s}", .{c.SDL_GetError()});
-                },
-                else => {},
-            }
+        .sdl => if (is_error) {
+            std.log.err("{s}", .{c.SDL_GetError()});
         },
         .opengl => |gl_options| {
             if (gl_options.check_error) {
@@ -230,6 +335,9 @@ fn wrapPrintError(
                     return CError.GlError;
                 }
             }
+        },
+        .imgui => if (is_error) {
+            std.log.err("Imgui error", .{});
         },
     }
     return ret_val;

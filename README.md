@@ -14,6 +14,7 @@ I'm not looking for issues/prs as it's not meant for anyone else to really use a
 - [Zig](https://ziglang.org/)
 - [SDL2](https://www.libsdl.org/download-2.0.php) for video, audio, etc.
 - OpenGL (Could make optional)
+- Imgui (Included and optional with -Dimgui=[bool])
 
 ### Status/TODO
 

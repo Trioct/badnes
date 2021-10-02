@@ -47,7 +47,7 @@ pub fn main() anyerror!void {
         .precision = comptime std.meta.stringToEnum(Precision, @tagName(build_options.precision)).?,
         .method = .sdl,
     }).alloc();
-    console.init(video_context.getPixelBuffer(), &audio_context);
+    console.init(video_context.getGamePixelBuffer(), &audio_context);
     defer console.deinit(allocator);
 
     try console.loadRom(allocator, rom_path);
@@ -59,13 +59,8 @@ pub fn main() anyerror!void {
     var frames: usize = 0;
     mloop: while (true) {
         while (Sdl.pollEvent(.{&event}) == 1) {
-            switch (event.type) {
-                sdl_bindings.c.SDL_KEYUP => switch (event.key.keysym.sym) {
-                    sdl_bindings.c.SDLK_q => break :mloop,
-                    else => {},
-                },
-                sdl_bindings.c.SDL_QUIT => break :mloop,
-                else => {},
+            if (!video_context.handleEvent(event)) {
+                break :mloop;
             }
         }
         if (console.ppu.present_frame) {
