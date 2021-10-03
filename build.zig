@@ -18,6 +18,10 @@ pub fn build(b: *std.build.Builder) void {
     const precision = b.option(console.Precision, "precision", "Whether to prioritize performance or accuracy") orelse .accurate;
     const log_step = b.option(bool, "log-step", "Whether to log every cpu step to stdout") orelse false;
 
+    if (imgui and precision == .fast) {
+        @panic("Not supporting imgui and fast precision right now (not sure if I want to?)");
+    }
+
     const exe = b.addExecutable("badnes", "src/main.zig");
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");

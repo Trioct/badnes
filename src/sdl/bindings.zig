@@ -34,6 +34,7 @@ pub const Sdl = struct {
     pub const destroyWindow = wrap(c.SDL_DestroyWindow, empty_options);
     pub const getWindowSize = wrap(c.SDL_GetWindowSize, empty_options);
     pub const setWindowSize = wrap(c.SDL_SetWindowSize, empty_options);
+    pub const setWindowPosition = wrap(c.SDL_SetWindowPosition, empty_options);
 
     pub const pollEvent = wrap(c.SDL_PollEvent, .{ .sdl = .{ .int = .int_to_zig } });
     pub const getKeyboardState = wrap(c.SDL_GetKeyboardState, .{ .sdl = .{
@@ -78,17 +79,18 @@ pub const Gl = struct {
 
 pub const Imgui = struct {
     const empty_options = .{ .imgui = .{} };
+    const bool_err = .{ .imgui = .{ .bool_to_error = true } };
 
     pub const createContext = wrap(c.igCreateContext, empty_options);
-    pub const sdl2InitForOpengl = wrap(c.ImGui_ImplSDL2_InitForOpenGL, empty_options);
-    pub const opengl3Init = wrap(c.ImGui_ImplOpenGL3_Init, empty_options);
+    pub const sdl2InitForOpengl = wrap(c.ImGui_ImplSDL2_InitForOpenGL, bool_err);
+    pub const opengl3Init = wrap(c.ImGui_ImplOpenGL3_Init, bool_err);
 
     pub const sdl2Shutdown = wrap(c.ImGui_ImplSDL2_Shutdown, empty_options);
     pub const opengl3Shutdown = wrap(c.ImGui_ImplOpenGL3_Shutdown, empty_options);
 
     pub const styleColorsDark = wrap(c.igStyleColorsDark, empty_options);
 
-    pub const sdl2ProcessEvent = wrap(c.ImGui_ImplSDL2_ProcessEvent, .{ .imgui = .{ .bool_to_error = false } });
+    pub const sdl2ProcessEvent = wrap(c.ImGui_ImplSDL2_ProcessEvent, empty_options);
 
     pub const opengl3NewFrame = wrap(c.ImGui_ImplOpenGL3_NewFrame, empty_options);
     pub const sdl2NewFrame = wrap(c.ImGui_ImplSDL2_NewFrame, empty_options);
@@ -101,7 +103,48 @@ pub const Imgui = struct {
     pub const begin = wrap(c.igBegin, empty_options);
     pub const end = wrap(c.igEnd, empty_options);
 
+    pub const findWindowByName = wrap(c.igFindWindowByName, .{ .imgui = .{ .optional_to_error = false } });
+    pub const setNextWindowSize = wrap(c.igSetNextWindowSize, empty_options);
+    pub const setNextWindowContentSize = wrap(c.igSetNextWindowContentSize, empty_options);
+
+    pub const beginPopup = wrap(c.igBeginPopup, empty_options);
+    pub const beginPopupModal = wrap(c.igBeginPopupModal, empty_options);
+    pub const endPopup = wrap(c.igEndPopup, empty_options);
+
+    pub const beginMenu = wrap(c.igBeginMenu, empty_options);
+    pub const endMenu = wrap(c.igEndMenu, empty_options);
+    pub const beginMainMenuBar = wrap(c.igBeginMainMenuBar, empty_options);
+    pub const endMainMenuBar = wrap(c.igEndMainMenuBar, empty_options);
+    pub const menuItem = wrap(c.igMenuItem_Bool, empty_options);
+    pub const menuItemPtr = wrap(c.igMenuItem_BoolPtr, empty_options);
+
+    pub const button = wrap(c.igButton, empty_options);
     pub const image = wrap(c.igImage, empty_options);
+
+    pub const windowFlagsNone = c.ImGuiWindowFlags_None;
+    pub const windowFlagsNoTitleBar = c.ImGuiWindowFlags_NoTitleBar;
+    pub const windowFlagsNoResize = c.ImGuiWindowFlags_NoResize;
+    pub const windowFlagsNoMove = c.ImGuiWindowFlags_NoMove;
+    pub const windowFlagsNoScrollbar = c.ImGuiWindowFlags_NoScrollbar;
+    pub const windowFlagsNoScrollWithMouse = c.ImGuiWindowFlags_NoScrollWithMouse;
+    pub const windowFlagsNoCollapse = c.ImGuiWindowFlags_NoCollapse;
+    pub const windowFlagsAlwaysAutoResize = c.ImGuiWindowFlags_AlwaysAutoResize;
+    pub const windowFlagsNoBackground = c.ImGuiWindowFlags_NoBackground;
+    pub const windowFlagsNoSavedSettings = c.ImGuiWindowFlags_NoSavedSettings;
+    pub const windowFlagsNoMouseInputs = c.ImGuiWindowFlags_NoMouseInputs;
+    pub const windowFlagsMenuBar = c.ImGuiWindowFlags_MenuBar;
+    pub const windowFlagsHorizontalScrollbar = c.ImGuiWindowFlags_HorizontalScrollbar;
+    pub const windowFlagsNoFocusOnAppearing = c.ImGuiWindowFlags_NoFocusOnAppearing;
+    pub const windowFlagsNoBringToFrontOnFocus = c.ImGuiWindowFlags_NoBringToFrontOnFocus;
+    pub const windowFlagsAlwaysVerticalScrollbar = c.ImGuiWindowFlags_AlwaysVerticalScrollbar;
+    pub const windowFlagsAlwaysHorizontalScrollbar = c.ImGuiWindowFlags_AlwaysHorizontalScrollbar;
+    pub const windowFlagsAlwaysUseWindowPadding = c.ImGuiWindowFlags_AlwaysUseWindowPadding;
+    pub const windowFlagsNoNavInputs = c.ImGuiWindowFlags_NoNavInputs;
+    pub const windowFlagsNoNavFocus = c.ImGuiWindowFlags_NoNavFocus;
+    pub const windowFlagsUnsavedDocument = c.ImGuiWindowFlags_UnsavedDocument;
+    pub const windowFlagsNoNav = c.ImGuiWindowFlags_NoNavInputs | c.ImGuiWindowFlags_NoNavFocus;
+    pub const windowFlagsNoDecoration = c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoScrollbar | c.ImGuiWindowFlags_NoCollapse;
+    pub const windowFlagsNoInputs = c.ImGuiWindowFlags_NoMouseInputs | c.ImGuiWindowFlags_NoNavInputs | c.ImGuiWindowFlags_NoNavFocus;
 };
 
 pub const CError = error{
@@ -131,7 +174,8 @@ const WrapOptions = union(enum) {
     },
 
     imgui: struct {
-        bool_to_error: bool = true,
+        bool_to_error: bool = false,
+        optional_to_error: bool = true,
     },
 
     const IntConversion = enum {
@@ -158,7 +202,7 @@ const WrapOptions = union(enum) {
         return switch (self) {
             .sdl => |x| x.optional_to_error,
             .opengl => false,
-            .imgui => true,
+            .imgui => |x| x.optional_to_error,
         };
     }
 

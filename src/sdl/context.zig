@@ -16,6 +16,7 @@ pub fn Context(comptime using_imgui: bool) type {
     return struct {
         const Self = @This();
 
+        allocator: *Allocator,
         window: *Sdl.Window,
         gl_context: Sdl.GLContext,
         extension_context: ExtensionContext,
@@ -32,7 +33,7 @@ pub fn Context(comptime using_imgui: bool) type {
             frametime: f32 = (4 * (261 * 341 + 340.5)) / 21477272.0,
         };
 
-        pub fn init(allocator: *Allocator, title: [:0]const u8) !Self {
+        pub fn init(allocator: *Allocator, console: anytype, title: [:0]const u8) !Self {
             const window = try Sdl.createWindow(.{
                 title,
                 c.SDL_WINDOWPOS_CENTERED,
@@ -57,6 +58,7 @@ pub fn Context(comptime using_imgui: bool) type {
             try Sdl.glSetSwapInterval(.{0});
 
             var self = Self{
+                .allocator = allocator,
                 .window = window,
                 .gl_context = gl_context,
                 .extension_context = undefined,
@@ -65,7 +67,10 @@ pub fn Context(comptime using_imgui: bool) type {
                 .next_frame_time = undefined,
             };
 
-            const extension_context = try ExtensionContext.init(allocator, &self);
+            const extension_context = try if (using_imgui)
+                ExtensionContext.init(&self, console)
+            else
+                ExtensionContext.init(&self);
             const now = time.nanoTimestamp();
 
             self.extension_context = extension_context;
@@ -75,7 +80,7 @@ pub fn Context(comptime using_imgui: bool) type {
             return self;
         }
 
-        pub fn deinit(self: Self, allocator: *Allocator) void {
+        pub fn deinit(self: *Self, allocator: *Allocator) void {
             self.extension_context.deinit(allocator);
 
             Sdl.glDeleteContext(.{self.gl_context});

@@ -23,10 +23,10 @@ fn testRom(
     defer audio_context.deinit(testing.allocator);
 
     var console = Console(.{ .precision = precision, .method = .pure }).alloc();
-    console.init(video_context.getPixelBuffer(), &audio_context);
-    defer console.deinit(testing.allocator);
+    console.init(testing.allocator, video_context.getPixelBuffer(), &audio_context);
+    defer console.deinit();
 
-    try console.loadRom(testing.allocator, "roms/nes-test-roms/" ++ rom);
+    try console.loadRom("roms/nes-test-roms/" ++ rom);
     console.cpu.reset();
     if (buttons) |b| {
         console.controller.holdButtons(b);

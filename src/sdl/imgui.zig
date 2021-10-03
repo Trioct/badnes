@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
+const HashMap = std.StringHashMap;
 
 const bindings = @import("bindings.zig");
 const c = bindings.c;
@@ -11,14 +11,24 @@ const Imgui = bindings.Imgui;
 const Context = @import("context.zig").Context;
 const PixelBuffer = @import("basic_video.zig").PixelBuffer;
 
+const Console = @import("../console.zig").Console;
+
 pub const ImguiContext = struct {
-    parent_context: *Context(true),
-    windows: ArrayList(Window),
+    console: *Console(.{ .precision = .accurate, .method = .sdl }),
+    windows: HashMap(Window),
 
     game_pixel_buffer: PixelBuffer,
 
-    pub fn init(allocator: *Allocator, parent_context: *Context(true)) !ImguiContext {
+    const FileDialogReason = enum {
+        open_rom,
+    };
+
+    pub fn init(
+        parent_context: *Context(true),
+        console: *Console(.{ .precision = .accurate, .method = .sdl }),
+    ) !ImguiContext {
         Sdl.setWindowSize(.{ parent_context.window, 1920, 1080 });
+        Sdl.setWindowPosition(.{ parent_context.window, c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED });
 
         _ = try Imgui.createContext(.{null});
         try Imgui.sdl2InitForOpengl(.{ parent_context.window, parent_context.gl_context });
@@ -27,26 +37,29 @@ pub const ImguiContext = struct {
         Imgui.styleColorsDark(.{null});
 
         var self = ImguiContext{
-            .parent_context = parent_context,
-            .windows = ArrayList(Window).init(allocator),
+            .console = console,
+            .windows = HashMap(Window).init(parent_context.allocator),
 
-            .game_pixel_buffer = try PixelBuffer.init(allocator, 256, 240),
+            .game_pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
         };
 
         self.game_pixel_buffer.scale = 3;
 
-        errdefer self.deinit(allocator);
+        errdefer self.deinit(parent_context.allocator);
 
-        var game_window = try self.windows.addOne();
-        game_window.* = Window.init(allocator, "NES");
-
-        try game_window.widgets.append(Widget{ .game_pixel_buffer = .{} });
+        const game_window = Window.init(
+            .{ .game_window = .{} },
+            "NES",
+            Imgui.windowFlagsAlwaysAutoResize,
+        );
+        try self.addWindow(game_window);
 
         return self;
     }
 
-    pub fn deinit(self: ImguiContext, allocator: *Allocator) void {
-        for (self.windows.items) |window| {
+    pub fn deinit(self: *ImguiContext, allocator: *Allocator) void {
+        var values = self.windows.valueIterator();
+        while (values.next()) |window| {
             window.deinit(allocator);
         }
         self.windows.deinit();
@@ -54,6 +67,49 @@ pub const ImguiContext = struct {
 
         Imgui.opengl3Shutdown();
         Imgui.sdl2Shutdown();
+    }
+
+    fn getWindowAvailable(self: ImguiContext, name: []const u8) bool {
+        if (self.windows.get(name)) |window| {
+            return window.closed;
+        }
+        return true;
+    }
+
+    // TODO: very inefficient, not my focus right now
+    fn makeWindowNameUnique(self: *ImguiContext, comptime name: []const u8) []const u8 {
+        if (self.getWindowAvailable(name)) {
+            const tagged = comptime if (std.mem.indexOf(u8, name, "##") != null) true else false;
+            var new_name = comptime blk: {
+                break :blk name ++ if (tagged) "00000" else "##00000";
+            };
+            const num_index = comptime if (tagged) name.len else name.len + 2;
+
+            var i: u16 = 0;
+            while (i < 65535) : (i += 1) {
+                if (self.getWindowAvailable(new_name)) {
+                    return new_name;
+                }
+                std.fmt.bufPrintIntToSlice(
+                    new_name[num_index..],
+                    i,
+                    10,
+                    .lower,
+                    .{ .width = 5, .fill = '0' },
+                );
+            }
+            @panic("Someone really went and made 65535 instances of the same window");
+        } else {
+            return name;
+        }
+    }
+
+    fn addWindow(self: *ImguiContext, window: Window) !void {
+        return self.windows.put(window.title, window);
+    }
+
+    fn getParentContext(self: *ImguiContext) *Context(true) {
+        return @fieldParentPtr(Context(true), "extension_context", self);
     }
 
     pub fn getGamePixelBuffer(self: *ImguiContext) *PixelBuffer {
@@ -78,8 +134,11 @@ pub const ImguiContext = struct {
         Imgui.sdl2NewFrame();
         Imgui.newFrame();
 
-        for (self.windows.items) |window| {
-            try window.draw(self.*);
+        try self.drawMainMenu();
+
+        var values = self.windows.valueIterator();
+        while (values.next()) |window| {
+            try window.draw(self);
         }
 
         try Gl.bindTexture(.{ c.GL_TEXTURE_2D, 0 });
@@ -90,61 +149,95 @@ pub const ImguiContext = struct {
         Imgui.render();
         Imgui.opengl3RenderDrawData(.{try Imgui.getDrawData()});
     }
+
+    fn drawMainMenu(self: *ImguiContext) !void {
+        if (!Imgui.beginMainMenuBar()) {
+            return;
+        }
+
+        if (Imgui.beginMenu(.{ "File", true })) {
+            if (Imgui.menuItem(.{ "Open Rom", null, false, true })) {
+                try self.openFileDialog(.open_rom);
+            }
+            Imgui.endMenu();
+        }
+
+        Imgui.endMainMenuBar();
+    }
+
+    fn openFileDialog(self: *ImguiContext, comptime reason: FileDialogReason) !void {
+        const name = "Choose a file##" ++ @tagName(reason);
+        if (!self.getWindowAvailable(name)) {
+            return;
+        }
+        const file_dialog = Window.init(
+            .{ .file_dialog = .{} },
+            name,
+            Imgui.windowFlagsNone,
+        );
+        try self.addWindow(file_dialog);
+    }
 };
 
 const Window = struct {
-    title: []const u8,
-    widgets: ArrayList(Widget),
+    const Flags = @TypeOf(c.ImGuiWindowFlags_None);
 
-    fn init(allocator: *Allocator, title: []const u8) Window {
+    impl: WindowImpl,
+
+    title: []const u8,
+    flags: Flags,
+
+    closed: bool = false,
+
+    fn init(impl: WindowImpl, title: []const u8, flags: Flags) Window {
         return Window{
+            .impl = impl,
+
             .title = title,
-            .widgets = ArrayList(Widget).init(allocator),
+            .flags = flags,
         };
     }
 
     fn deinit(self: Window, allocator: *Allocator) void {
-        for (self.widgets.items) |widget| {
-            widget.deinit(allocator);
-        }
-        self.widgets.deinit();
+        self.impl.deinit(allocator);
     }
 
-    fn draw(self: Window, context: ImguiContext) !void {
-        try Imgui.begin(.{ @ptrCast([*]const u8, self.title), null, 0 });
-        for (self.widgets.items) |widget| {
-            try widget.draw(context);
+    fn draw(self: *Window, context: *ImguiContext) !void {
+        if (self.closed) {
+            return;
+        }
+        const c_title = @ptrCast([*]const u8, self.title);
+        if (Imgui.begin(.{ c_title, null, self.flags })) {
+            self.closed = !(try self.impl.draw(context));
         }
         Imgui.end();
     }
 };
 
-// TODO: consider vtable implementation?
-const Widget = union(enum) {
-    game_pixel_buffer: GamePixelBuffer,
-    pixel_buffer: PixelBuffer,
+const WindowImpl = union(enum) {
+    game_window: GameWindow,
+    file_dialog: FileDialog,
 
-    const GamePixelBuffer = struct {
-        fn draw(_: GamePixelBuffer, context: ImguiContext) !void {
-            return Widget.drawPixelBuffer(context.game_pixel_buffer);
-        }
-    };
-
-    fn deinit(self: Widget, allocator: *Allocator) void {
+    fn deinit(self: WindowImpl, allocator: *Allocator) void {
+        _ = allocator;
         switch (self) {
-            .game_pixel_buffer => {},
-            .pixel_buffer => |x| x.deinit(allocator),
+            .game_window => {},
+            .file_dialog => {},
         }
     }
 
-    fn draw(self: Widget, context: ImguiContext) !void {
+    fn draw(self: WindowImpl, context: *ImguiContext) !bool {
         switch (self) {
-            .game_pixel_buffer => |x| try x.draw(context),
-            .pixel_buffer => |x| try x.drawRaw(),
+            .game_window => |x| return x.draw(context.*),
+            .file_dialog => |x| return x.draw(context),
         }
     }
+};
 
-    fn drawPixelBuffer(pixel_buffer: PixelBuffer) !void {
+const GameWindow = struct {
+    fn draw(_: GameWindow, context: ImguiContext) !bool {
+        const pixel_buffer = &context.game_pixel_buffer;
+
         try Gl.bindTexture(.{ c.GL_TEXTURE_2D, pixel_buffer.texture });
         try pixel_buffer.copyTextureInternal();
         const texture_ptr = @intToPtr(*c_void, pixel_buffer.texture);
@@ -162,5 +255,20 @@ const Widget = union(enum) {
             .{ .x = 1, .y = 1, .z = 1, .w = 1 },
             .{ .x = 0, .y = 0, .z = 0, .w = 0 },
         });
+
+        return true;
+    }
+};
+
+const FileDialog = struct {
+    fn draw(_: FileDialog, context: *ImguiContext) !bool {
+        if (Imgui.button(.{ "Play golf lol", .{ .x = 0, .y = 0 } })) {
+            context.console.clearState();
+            try context.console.loadRom(
+                "roms/no-redist/NES Open Tournament Golf (USA).nes",
+            );
+            return false;
+        }
+        return true;
     }
 };

@@ -11,10 +11,9 @@ const Context = @import("context.zig").Context;
 // not that I understand opengl
 
 pub const BasicContext = struct {
-    parent_context: *Context(false),
     pixel_buffer: PixelBuffer,
 
-    pub fn init(allocator: *Allocator, parent_context: *Context(false)) !BasicContext {
+    pub fn init(parent_context: *Context(false)) !BasicContext {
         try Gl.viewport(.{ 0, 0, 256 * 3, 240 * 3 });
         try Gl.enable(.{c.GL_TEXTURE_2D});
 
@@ -22,8 +21,7 @@ pub const BasicContext = struct {
         try Gl.loadIdentity();
 
         var self = BasicContext{
-            .parent_context = parent_context,
-            .pixel_buffer = try PixelBuffer.init(allocator, 256, 240),
+            .pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
         };
 
         self.pixel_buffer.scale = 3;
@@ -51,7 +49,7 @@ pub const BasicContext = struct {
         return true;
     }
 
-    pub fn draw(self: *BasicContext) !void {
+    pub fn draw(self: BasicContext) !void {
         try Gl.pushClientAttrib(.{c.GL_CLIENT_ALL_ATTRIB_BITS});
         try Gl.pushMatrix();
 

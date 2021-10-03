@@ -34,8 +34,13 @@ pub fn main() anyerror!void {
     try Sdl.init(.{sdl_bindings.c.SDL_INIT_VIDEO | sdl_bindings.c.SDL_INIT_AUDIO | sdl_bindings.c.SDL_INIT_EVENTS});
     defer Sdl.quit();
 
+    var console = Console(.{
+        .precision = comptime std.meta.stringToEnum(Precision, @tagName(build_options.precision)).?,
+        .method = .sdl,
+    }).alloc();
+
     const sdl_context = if (build_options.imgui) .sdl_imgui else .sdl_basic;
-    var video_context = try video.Context(sdl_context).init(allocator, "Badnes");
+    var video_context = try video.Context(sdl_context).init(allocator, &console, "Badnes");
     defer video_context.deinit(allocator);
 
     var audio_context = try audio.Context(.sdl).alloc(allocator);
@@ -43,15 +48,10 @@ pub fn main() anyerror!void {
     try audio_context.init();
     defer audio_context.deinit(allocator);
 
-    var console = Console(.{
-        .precision = comptime std.meta.stringToEnum(Precision, @tagName(build_options.precision)).?,
-        .method = .sdl,
-    }).alloc();
-    console.init(video_context.getGamePixelBuffer(), &audio_context);
-    defer console.deinit(allocator);
+    console.init(allocator, video_context.getGamePixelBuffer(), &audio_context);
+    defer console.deinit();
 
-    try console.loadRom(allocator, rom_path);
-    console.cpu.reset();
+    try console.loadRom(rom_path);
 
     var event: sdl_bindings.c.SDL_Event = undefined;
 
