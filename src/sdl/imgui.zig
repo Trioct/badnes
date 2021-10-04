@@ -1,5 +1,7 @@
 const std = @import("std");
+const fs = std.fs;
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 const HashMap = std.StringHashMap;
 
 const bindings = @import("bindings.zig");
@@ -16,6 +18,7 @@ const Console = @import("../console.zig").Console;
 pub const ImguiContext = struct {
     console: *Console(.{ .precision = .accurate, .method = .sdl }),
     windows: HashMap(Window),
+    quit: bool = false,
 
     game_pixel_buffer: PixelBuffer,
 
@@ -69,16 +72,16 @@ pub const ImguiContext = struct {
         Imgui.sdl2Shutdown();
     }
 
-    fn getWindowAvailable(self: ImguiContext, name: []const u8) bool {
+    fn isWindowAvailable(self: ImguiContext, name: []const u8) bool {
         if (self.windows.get(name)) |window| {
-            return window.closed;
+            return !window.open;
         }
         return true;
     }
 
     // TODO: very inefficient, not my focus right now
     fn makeWindowNameUnique(self: *ImguiContext, comptime name: []const u8) []const u8 {
-        if (self.getWindowAvailable(name)) {
+        if (self.isWindowAvailable(name)) {
             const tagged = comptime if (std.mem.indexOf(u8, name, "##") != null) true else false;
             var new_name = comptime blk: {
                 break :blk name ++ if (tagged) "00000" else "##00000";
@@ -87,7 +90,7 @@ pub const ImguiContext = struct {
 
             var i: u16 = 0;
             while (i < 65535) : (i += 1) {
-                if (self.getWindowAvailable(new_name)) {
+                if (self.isWindowAvailable(new_name)) {
                     return new_name;
                 }
                 std.fmt.bufPrintIntToSlice(
@@ -105,7 +108,15 @@ pub const ImguiContext = struct {
     }
 
     fn addWindow(self: *ImguiContext, window: Window) !void {
-        return self.windows.put(window.title, window);
+        const result = try self.windows.getOrPut(window.title);
+        if (result.found_existing) {
+            if (!result.value_ptr.open) {
+                std.log.err("Overwriting window that's in use: {s}", .{window.title});
+            }
+            result.value_ptr.deinit(self.getParentContext().allocator);
+        }
+        result.value_ptr.* = window;
+        std.log.debug("Added window: {s}", .{window.title});
     }
 
     fn getParentContext(self: *ImguiContext) *Context(true) {
@@ -116,17 +127,13 @@ pub const ImguiContext = struct {
         return &self.game_pixel_buffer;
     }
 
-    pub fn handleEvent(_: *ImguiContext, event: c.SDL_Event) bool {
+    pub fn handleEvent(self: *ImguiContext, event: c.SDL_Event) bool {
         _ = Imgui.sdl2ProcessEvent(.{&event});
         switch (event.type) {
-            c.SDL_KEYUP => switch (event.key.keysym.sym) {
-                c.SDLK_q => return false,
-                else => {},
-            },
             c.SDL_QUIT => return false,
             else => {},
         }
-        return true;
+        return !self.quit;
     }
 
     pub fn draw(self: *ImguiContext) !void {
@@ -159,6 +166,7 @@ pub const ImguiContext = struct {
             if (Imgui.menuItem(.{ "Open Rom", null, false, true })) {
                 try self.openFileDialog(.open_rom);
             }
+            _ = Imgui.menuItemPtr(.{ "Exit", null, &self.quit, true });
             Imgui.endMenu();
         }
 
@@ -167,11 +175,11 @@ pub const ImguiContext = struct {
 
     fn openFileDialog(self: *ImguiContext, comptime reason: FileDialogReason) !void {
         const name = "Choose a file##" ++ @tagName(reason);
-        if (!self.getWindowAvailable(name)) {
+        if (!self.isWindowAvailable(name)) {
             return;
         }
         const file_dialog = Window.init(
-            .{ .file_dialog = .{} },
+            .{ .file_dialog = try FileDialog.init(self.getParentContext().allocator) },
             name,
             Imgui.windowFlagsNone,
         );
@@ -187,7 +195,7 @@ const Window = struct {
     title: []const u8,
     flags: Flags,
 
-    closed: bool = false,
+    open: bool = true,
 
     fn init(impl: WindowImpl, title: []const u8, flags: Flags) Window {
         return Window{
@@ -203,12 +211,21 @@ const Window = struct {
     }
 
     fn draw(self: *Window, context: *ImguiContext) !void {
-        if (self.closed) {
+        if (!self.open) {
             return;
         }
+
         const c_title = @ptrCast([*]const u8, self.title);
-        if (Imgui.begin(.{ c_title, null, self.flags })) {
-            self.closed = !(try self.impl.draw(context));
+
+        var new_open: bool = self.open;
+        defer self.open = new_open;
+        if (Imgui.begin(.{ c_title, &new_open, self.flags })) {
+            if (new_open) {
+                new_open = try self.impl.draw(context);
+            } else {
+                try self.impl.onClosed(context);
+                std.log.debug("Closed window: {s}", .{self.title});
+            }
         }
         Imgui.end();
     }
@@ -222,14 +239,21 @@ const WindowImpl = union(enum) {
         _ = allocator;
         switch (self) {
             .game_window => {},
-            .file_dialog => {},
+            .file_dialog => |x| x.deinit(),
         }
     }
 
-    fn draw(self: WindowImpl, context: *ImguiContext) !bool {
-        switch (self) {
+    fn draw(self: *WindowImpl, context: *ImguiContext) !bool {
+        switch (self.*) {
             .game_window => |x| return x.draw(context.*),
-            .file_dialog => |x| return x.draw(context),
+            .file_dialog => |*x| return x.draw(context),
+        }
+    }
+
+    fn onClosed(self: *WindowImpl, _: *ImguiContext) !void {
+        switch (self.*) {
+            .game_window => {},
+            .file_dialog => {},
         }
     }
 };
@@ -260,8 +284,168 @@ const GameWindow = struct {
     }
 };
 
+const StringBuilder = struct {
+    buffer: ArrayList(u8),
+
+    fn init(allocator: *Allocator, capacity: ?usize) !StringBuilder {
+        if (capacity) |cap| {
+            return StringBuilder{
+                .buffer = try ArrayList(u8).initCapacity(allocator, cap),
+            };
+        } else {
+            return StringBuilder{
+                .buffer = ArrayList(u8).init(allocator),
+            };
+        }
+    }
+
+    fn deinit(self: StringBuilder) void {
+        self.buffer.deinit();
+    }
+
+    fn toOwnedSlice(self: *StringBuilder) []u8 {
+        return self.buffer.toOwnedSlice();
+    }
+
+    fn toRefBuffer(self: *StringBuilder, allocator: *Allocator) !RefBuffer(u8) {
+        return RefBuffer(u8).from(allocator, self.toOwnedSlice());
+    }
+
+    fn clear(self: *StringBuilder) void {
+        self.buffer.clearAndFree();
+    }
+
+    fn writer(self: *StringBuilder) std.io.Writer(*StringBuilder, Allocator.Error, StringBuilder.write) {
+        return .{ .context = self };
+    }
+
+    fn write(self: *StringBuilder, bytes: []const u8) Allocator.Error!usize {
+        try self.buffer.appendSlice(bytes);
+        return bytes.len;
+    }
+
+    fn nullTerminate(self: *StringBuilder) Allocator.Error!void {
+        return self.buffer.append('\x00');
+    }
+};
+
+fn RefBuffer(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        allocator: *Allocator,
+        slice: []T,
+        ref_count: *usize,
+
+        fn init(allocator: *Allocator, size: usize) !Self {
+            return Self.from(allocator, try allocator.alloc(T, size));
+        }
+
+        fn from(allocator: *Allocator, slice: []T) !Self {
+            errdefer allocator.free(slice);
+            var ref_count = try allocator.create(usize);
+            ref_count.* = 1;
+            return Self{
+                .allocator = allocator,
+                .slice = slice,
+                .ref_count = ref_count,
+            };
+        }
+
+        fn ref(self: Self) Self {
+            self.ref_count.* += 1;
+            return self;
+        }
+
+        fn unref(self: Self) void {
+            self.ref_count.* -= 1;
+            if (self.ref_count.* == 0) {
+                self.allocator.free(self.slice);
+                self.allocator.destroy(self.ref_count);
+            }
+        }
+    };
+}
+
+const DirWalker = struct {
+    buffer: RefBuffer(u8),
+    dirs: ArrayList(RefBuffer(u8)),
+    //files: ArrayList()
+
+    fn init(allocator: *Allocator, path: []const u8, buffer: RefBuffer(u8)) !DirWalker {
+        var dir_strings = std.mem.split(u8, try fs.cwd().realpath(path, buffer.slice), "/");
+
+        var dirs = ArrayList(RefBuffer(u8)).init(allocator);
+        errdefer dirs.deinit();
+
+        var str = try StringBuilder.init(allocator, null);
+        errdefer str.deinit();
+        while (dir_strings.next()) |dir| {
+            str.clear();
+            try std.fmt.format(str.writer(), "{s}/\x00", .{dir});
+            try dirs.append(try str.toRefBuffer(allocator));
+        }
+        str.deinit();
+
+        return DirWalker{
+            .buffer = buffer.ref(),
+            .dirs = dirs,
+        };
+    }
+
+    fn deinit(self: DirWalker) void {
+        for (self.dirs.items) |dir| {
+            dir.unref();
+        }
+        self.dirs.deinit();
+        self.buffer.unref();
+    }
+
+    fn selectDir(self: *DirWalker, index: usize) void {
+        var i: usize = self.dirs.items.len;
+        while (i > index + 1) : (i -= 1) {
+            const dir = self.dirs.pop();
+            dir.unref();
+        }
+        //self.updateFiles();
+    }
+
+    //fn updateFiles(self: *DirWalker) void {}
+};
+
 const FileDialog = struct {
-    fn draw(_: FileDialog, context: *ImguiContext) !bool {
+    buffer: RefBuffer(u8),
+    current_dir: DirWalker,
+
+    fn init(allocator: *Allocator) !FileDialog {
+        var buffer = try RefBuffer(u8).init(allocator, 1024);
+        const current_dir = try DirWalker.init(allocator, ".", buffer);
+
+        return FileDialog{
+            .buffer = buffer,
+            .current_dir = current_dir,
+        };
+    }
+
+    fn deinit(self: FileDialog) void {
+        self.current_dir.deinit();
+        self.buffer.unref();
+    }
+
+    fn draw(self: *FileDialog, context: *ImguiContext) !bool {
+        var dir_clicked: ?usize = null;
+        for (self.current_dir.dirs.items) |dir, i| {
+            if (Imgui.button(.{ @ptrCast([*]const u8, dir.slice), .{ .x = 0, .y = 0 } }) and dir_clicked == null) {
+                dir_clicked = i;
+            }
+            Imgui.sameLine(.{ 0, 0 });
+        }
+        Imgui.newLine();
+
+        if (dir_clicked) |i| {
+            self.current_dir.selectDir(i);
+        }
+
         if (Imgui.button(.{ "Play golf lol", .{ .x = 0, .y = 0 } })) {
             context.console.clearState();
             try context.console.loadRom(
