@@ -120,9 +120,9 @@ pub const Imgui = struct {
     pub const menuItem = wrap(c.igMenuItem_Bool, empty_options);
     pub const menuItemPtr = wrap(c.igMenuItem_BoolPtr, empty_options);
 
-    pub fn text(str: []const u8) void {
+    pub fn text(str: [:0]const u8) void {
         if (str.len != 0) {
-            c.igTextUnformatted(&str[0], &str[str.len - 1]);
+            c.igTextUnformatted(&str[0], &str[str.len]);
         }
     }
     pub const button = wrap(c.igButton, empty_options);

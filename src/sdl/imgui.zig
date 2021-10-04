@@ -307,6 +307,12 @@ const StringBuilder = struct {
         return self.buffer.toOwnedSlice();
     }
 
+    fn toOwnedSliceNull(self: *StringBuilder) ![:0]u8 {
+        try self.buffer.append('\x00');
+        const bytes = self.buffer.toOwnedSlice();
+        return @ptrCast([*:0]u8, bytes)[0 .. bytes.len - 1 :0];
+    }
+
     fn toRefBuffer(self: *StringBuilder, allocator: *Allocator) !RefBuffer(u8) {
         return RefBuffer(u8).from(allocator, self.toOwnedSlice());
     }
@@ -322,10 +328,6 @@ const StringBuilder = struct {
     fn write(self: *StringBuilder, bytes: []const u8) Allocator.Error!usize {
         try self.buffer.appendSlice(bytes);
         return bytes.len;
-    }
-
-    fn nullTerminate(self: *StringBuilder) Allocator.Error!void {
-        return self.buffer.append('\x00');
     }
 };
 
@@ -367,50 +369,124 @@ fn RefBuffer(comptime T: type) type {
     };
 }
 
+// Janky api, fix if used in a contxt other than file dialog
 const DirWalker = struct {
-    buffer: RefBuffer(u8),
-    dirs: ArrayList(RefBuffer(u8)),
-    //files: ArrayList()
+    allocator: *Allocator,
 
-    fn init(allocator: *Allocator, path: []const u8, buffer: RefBuffer(u8)) !DirWalker {
-        var dir_strings = std.mem.split(u8, try fs.cwd().realpath(path, buffer.slice), "/");
+    dirs: ArrayList([:0]const u8),
+    files: ArrayList(File),
 
-        var dirs = ArrayList(RefBuffer(u8)).init(allocator);
+    const File = struct {
+        name: [:0]const u8,
+        is_dir: bool,
+    };
+
+    fn init(allocator: *Allocator, path: []const u8, buffer: []u8) !DirWalker {
+        var dir_strings = std.mem.split(u8, try fs.cwd().realpath(path, buffer), "/");
+
+        var dirs = ArrayList([:0]const u8).init(allocator);
         errdefer dirs.deinit();
 
         var str = try StringBuilder.init(allocator, null);
-        errdefer str.deinit();
+        defer str.deinit();
+
         while (dir_strings.next()) |dir| {
             str.clear();
-            try std.fmt.format(str.writer(), "{s}/\x00", .{dir});
-            try dirs.append(try str.toRefBuffer(allocator));
+            try std.fmt.format(str.writer(), "{s}", .{dir});
+            try dirs.append(try str.toOwnedSliceNull());
         }
-        str.deinit();
 
-        return DirWalker{
-            .buffer = buffer.ref(),
+        var self = DirWalker{
+            .allocator = allocator,
             .dirs = dirs,
+            .files = ArrayList(File).init(allocator),
         };
+
+        try self.updateFiles();
+
+        return self;
     }
 
     fn deinit(self: DirWalker) void {
         for (self.dirs.items) |dir| {
-            dir.unref();
+            self.allocator.free(dir);
         }
         self.dirs.deinit();
-        self.buffer.unref();
+
+        for (self.files.items) |file| {
+            self.allocator.free(file.name);
+        }
+        self.files.deinit();
     }
 
-    fn selectDir(self: *DirWalker, index: usize) void {
+    fn getParentDirString(self: DirWalker) !StringBuilder {
+        var str = try StringBuilder.init(self.allocator, null);
+
+        for (self.dirs.items) |dir| {
+            try std.fmt.format(str.writer(), "{s}/", .{dir});
+        }
+
+        return str;
+    }
+
+    fn selectParentDir(self: *DirWalker, index: usize) !void {
         var i: usize = self.dirs.items.len;
         while (i > index + 1) : (i -= 1) {
             const dir = self.dirs.pop();
-            dir.unref();
+            self.allocator.free(dir);
         }
-        //self.updateFiles();
+
+        for (self.files.items) |file| {
+            self.allocator.free(file.name);
+        }
+        self.files.clearAndFree();
+
+        try self.updateFiles();
     }
 
-    //fn updateFiles(self: *DirWalker) void {}
+    fn selectFile(self: *DirWalker, index: usize) !?[:0]const u8 {
+        const selected_file = self.files.items[index];
+        if (!selected_file.is_dir) {
+            var parent_str = try self.getParentDirString();
+            _ = try parent_str.write(selected_file.name);
+
+            return try parent_str.toOwnedSliceNull();
+        }
+
+        for (self.files.items) |file, i| {
+            if (i != index) {
+                self.allocator.free(file.name);
+            }
+        }
+        try self.dirs.append(selected_file.name);
+
+        self.files.clearAndFree();
+        try self.updateFiles();
+        return null;
+    }
+
+    fn updateFiles(self: *DirWalker) !void {
+        var str = try StringBuilder.init(self.allocator, null);
+        defer str.deinit();
+
+        const parent_path = try (try self.getParentDirString()).toOwnedSliceNull();
+        defer self.allocator.free(parent_path);
+
+        std.debug.print("{s}\n", .{parent_path});
+
+        var dir = try fs.openDirAbsolute(parent_path, .{ .iterate = true });
+        defer dir.close();
+
+        var dir_iter = dir.iterate();
+        while (try dir_iter.next()) |file| {
+            str.clear();
+            _ = try std.fmt.format(str.writer(), "{s}", .{file.name});
+            try self.files.append(File{
+                .name = try str.toOwnedSliceNull(),
+                .is_dir = file.kind == .Directory,
+            });
+        }
+    }
 };
 
 const FileDialog = struct {
@@ -419,7 +495,7 @@ const FileDialog = struct {
 
     fn init(allocator: *Allocator) !FileDialog {
         var buffer = try RefBuffer(u8).init(allocator, 1024);
-        const current_dir = try DirWalker.init(allocator, ".", buffer);
+        const current_dir = try DirWalker.init(allocator, ".", buffer.slice);
 
         return FileDialog{
             .buffer = buffer,
@@ -433,26 +509,43 @@ const FileDialog = struct {
     }
 
     fn draw(self: *FileDialog, context: *ImguiContext) !bool {
-        var dir_clicked: ?usize = null;
-        for (self.current_dir.dirs.items) |dir, i| {
-            if (Imgui.button(.{ @ptrCast([*]const u8, dir.slice), .{ .x = 0, .y = 0 } }) and dir_clicked == null) {
-                dir_clicked = i;
+        {
+            var dir_clicked: ?usize = null;
+            for (self.current_dir.dirs.items) |dir, i| {
+                const dir_name = if (i == 0) "/" else dir;
+                if (Imgui.button(.{ dir_name, .{ .x = 0, .y = 0 } }) and dir_clicked == null) {
+                    dir_clicked = i;
+                }
+                if (i != 0) {
+                    Imgui.sameLine(.{ 0, 0 });
+                    Imgui.text("/");
+                }
+                Imgui.sameLine(.{ 0, 0 });
             }
-            Imgui.sameLine(.{ 0, 0 });
-        }
-        Imgui.newLine();
+            Imgui.newLine();
 
-        if (dir_clicked) |i| {
-            self.current_dir.selectDir(i);
+            if (dir_clicked) |i| {
+                try self.current_dir.selectParentDir(i);
+            }
         }
 
-        if (Imgui.button(.{ "Play golf lol", .{ .x = 0, .y = 0 } })) {
-            context.console.clearState();
-            try context.console.loadRom(
-                "roms/no-redist/NES Open Tournament Golf (USA).nes",
-            );
-            return false;
+        {
+            var file_clicked: ?usize = null;
+            for (self.current_dir.files.items) |file, i| {
+                if (Imgui.button(.{ file.name, .{ .x = 0, .y = 0 } }) and file_clicked == null) {
+                    file_clicked = i;
+                }
+            }
+            if (file_clicked) |i| {
+                if (try self.current_dir.selectFile(i)) |path| {
+                    defer context.getParentContext().allocator.free(path);
+                    context.console.clearState();
+                    try context.console.loadRom(path);
+                    return false;
+                }
+            }
         }
+
         return true;
     }
 };
