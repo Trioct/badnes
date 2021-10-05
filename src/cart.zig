@@ -33,11 +33,14 @@ pub fn Cart(comptime config: Config) type {
             if (self.rom_loaded) {
                 self.mapper.deinit(allocator);
             }
-            self.rom_loaded = true;
+
             const inits = comptime blk: {
                 break :blk mapper.inits(config);
             };
-            self.mapper = try inits[info.mapper](allocator, console, info);
+            self.mapper = (try inits[info.mapper](allocator, console, info)) orelse
+                return error{MapperNotImplemented}.MapperNotImplemented;
+
+            self.rom_loaded = true;
             info.prg_rom = null;
             info.chr_rom = null;
 

@@ -15,7 +15,7 @@ fn MapperInitFn(comptime config: Config) type {
 }
 
 fn MapperInitFnSafe(comptime T: type, comptime config: Config) type {
-    return fn (*Allocator, *Console(config), *ines.RomInfo) Allocator.Error!T;
+    return fn (*Allocator, *Console(config), *ines.RomInfo) Allocator.Error!?T;
 }
 
 pub fn GenericMapper(comptime config: Config) type {
@@ -44,7 +44,11 @@ pub fn GenericMapper(comptime config: Config) type {
                     allocator: *Allocator,
                     console: *Console(config),
                     info: *ines.RomInfo,
-                ) Allocator.Error!Self {
+                ) Allocator.Error!?Self {
+                    if (@hasField(T, "dummy_is_not_implemented")) {
+                        return null;
+                    }
+
                     const ptr = try allocator.create(T);
                     try T.initMem(ptr, allocator, console, info);
                     return Self{
@@ -79,7 +83,7 @@ pub fn UnimplementedMapper(comptime config: Config, comptime number: u8) type {
     buf[0] = '0' + number / 100;
     const msg = "Mapper " ++ buf ++ " not implemented";
     return struct {
-        dummy: u64,
+        dummy_is_not_implemented: u64,
 
         fn initMem(_: *@This(), _: *Allocator, _: *Console(config), _: *ines.RomInfo) Allocator.Error!void {
             @panic(msg);

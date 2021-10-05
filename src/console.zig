@@ -38,6 +38,8 @@ pub fn Console(comptime config: Config) type {
         apu: Apu(config),
         controller: Controller(config.method),
 
+        paused: bool,
+
         pixel_buffer: *video.PixelBuffer(config.method),
         audio_context: *audio.Context(config.method),
 
@@ -49,6 +51,7 @@ pub fn Console(comptime config: Config) type {
                 .cpu = undefined,
                 .apu = undefined,
                 .controller = undefined,
+                .paused = undefined,
                 .pixel_buffer = undefined,
                 .audio_context = undefined,
             };
@@ -68,6 +71,8 @@ pub fn Console(comptime config: Config) type {
             self.apu = Apu(config).init(self, audio_context);
             self.controller = Controller(config.method){};
 
+            self.paused = true;
+
             self.pixel_buffer = pixel_buffer;
             self.audio_context = audio_context;
         }
@@ -83,6 +88,7 @@ pub fn Console(comptime config: Config) type {
             defer info.deinit(self.allocator);
             try self.cart.loadRom(self.allocator, self, &info);
             self.cpu.reset();
+            self.paused = false;
         }
 
         pub fn clearState(self: *Self) void {

@@ -19,18 +19,6 @@ pub fn main() anyerror!void {
 
     var allocator = &gpa.allocator;
 
-    var args_iter = std.process.args();
-    _ = args_iter.skip();
-
-    const rom_path = blk: {
-        if (args_iter.next(allocator)) |arg| {
-            break :blk try arg;
-        } else {
-            break :blk try allocator.dupe(u8, "roms/tests/nestest.nes");
-        }
-    };
-    defer allocator.free(rom_path);
-
     try Sdl.init(.{sdl_bindings.c.SDL_INIT_VIDEO | sdl_bindings.c.SDL_INIT_AUDIO | sdl_bindings.c.SDL_INIT_EVENTS});
     defer Sdl.quit();
 
@@ -51,7 +39,14 @@ pub fn main() anyerror!void {
     console.init(allocator, video_context.getGamePixelBuffer(), &audio_context);
     defer console.deinit();
 
-    try console.loadRom(rom_path);
+    var args_iter = std.process.args();
+    _ = args_iter.skip();
+
+    if (args_iter.next(allocator)) |arg| {
+        const path = try arg;
+        defer allocator.free(path);
+        try console.loadRom(path);
+    }
 
     var event: sdl_bindings.c.SDL_Event = undefined;
 
@@ -63,6 +58,7 @@ pub fn main() anyerror!void {
                 break :mloop;
             }
         }
+
         if (console.ppu.present_frame) {
             frames += 1;
             console.ppu.present_frame = false;
@@ -76,6 +72,11 @@ pub fn main() anyerror!void {
             if (frames > 4) {
                 audio_context.unpause();
             }
+        }
+
+        if (console.paused) {
+            _ = try video_context.draw(.{ .timing = .timed });
+            continue;
         }
 
         // Batch run instructions/cycles to not get bogged down by Sdl.pollEvent
