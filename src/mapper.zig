@@ -121,6 +121,7 @@ pub fn inits(comptime config: Config) [255]MapperInitFn(config) {
 
     types[0] = @import("mapper/nrom.zig").Mapper(config);
     types[1] = @import("mapper/mmc1.zig").Mapper(config);
+    types[2] = @import("mapper/uxrom.zig").Mapper(config);
     types[4] = @import("mapper/mmc3.zig").Mapper(config);
 
     var result = [_]MapperInitFn(config){undefined} ** 255;

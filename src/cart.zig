@@ -34,6 +34,8 @@ pub fn Cart(comptime config: Config) type {
                 self.mapper.deinit(allocator);
             }
 
+            std.log.info("Using mapper {:0>3}", .{info.mapper});
+
             const inits = comptime blk: {
                 break :blk mapper.inits(config);
             };
@@ -43,8 +45,6 @@ pub fn Cart(comptime config: Config) type {
             self.rom_loaded = true;
             info.prg_rom = null;
             info.chr_rom = null;
-
-            std.log.info("Using mapper {:0>3}", .{info.mapper});
         }
 
         pub inline fn cpuCycled(self: *Self) void {
