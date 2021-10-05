@@ -50,11 +50,12 @@ pub const ImguiContext = struct {
 
         errdefer self.deinit(parent_context.allocator);
 
-        const game_window = Window.init(
+        var game_window = Window.init(
             .{ .game_window = .{} },
             "NES",
             Imgui.windowFlagsAlwaysAutoResize,
         );
+        game_window.closeable = false;
         try self.addWindow(game_window);
 
         return self;
@@ -110,7 +111,7 @@ pub const ImguiContext = struct {
     fn addWindow(self: *ImguiContext, window: Window) !void {
         const result = try self.windows.getOrPut(window.title);
         if (result.found_existing) {
-            if (!result.value_ptr.open) {
+            if (result.value_ptr.open) {
                 std.log.err("Overwriting window that's in use: {s}", .{window.title});
             }
             result.value_ptr.deinit(self.getParentContext().allocator);
@@ -195,6 +196,7 @@ const Window = struct {
     title: []const u8,
     flags: Flags,
 
+    closeable: bool = true,
     open: bool = true,
 
     fn init(impl: WindowImpl, title: []const u8, flags: Flags) Window {
@@ -217,17 +219,21 @@ const Window = struct {
 
         const c_title = @ptrCast([*]const u8, self.title);
 
-        var new_open: bool = self.open;
-        defer self.open = new_open;
-        if (Imgui.begin(.{ c_title, &new_open, self.flags })) {
-            if (new_open) {
-                new_open = try self.impl.draw(context);
-            } else {
-                try self.impl.onClosed(context);
-                std.log.debug("Closed window: {s}", .{self.title});
+        defer Imgui.end();
+        if (self.closeable) {
+            var new_open: bool = self.open;
+            defer self.open = new_open;
+            if (Imgui.begin(.{ c_title, &new_open, self.flags })) {
+                if (new_open) {
+                    new_open = try self.impl.draw(context);
+                } else {
+                    try self.impl.onClosed(context);
+                    std.log.debug("Closed window: {s}", .{self.title});
+                }
             }
+        } else if (Imgui.begin(.{ c_title, null, self.flags })) {
+            _ = try self.impl.draw(context);
         }
-        Imgui.end();
     }
 };
 
@@ -378,7 +384,7 @@ const DirWalker = struct {
 
     const File = struct {
         name: [:0]const u8,
-        is_dir: bool,
+        kind: fs.Dir.Entry.Kind,
     };
 
     fn init(allocator: *Allocator, path: []const u8, buffer: []u8) !DirWalker {
@@ -441,28 +447,38 @@ const DirWalker = struct {
         }
         self.files.clearAndFree();
 
-        try self.updateFiles();
+        self.updateFiles() catch |err| {
+            std.log.err("{}: Failed to select file", .{err});
+        };
     }
 
     fn selectFile(self: *DirWalker, index: usize) !?[:0]const u8 {
         const selected_file = self.files.items[index];
-        if (!selected_file.is_dir) {
-            var parent_str = try self.getParentDirString();
-            _ = try parent_str.write(selected_file.name);
 
-            return try parent_str.toOwnedSliceNull();
+        switch (selected_file.kind) {
+            .File => {
+                var parent_str = try self.getParentDirString();
+                defer parent_str.deinit();
+
+                _ = try parent_str.write(selected_file.name);
+                return try parent_str.toOwnedSliceNull();
+            },
+            .Directory => {
+                for (self.files.items) |file, i| {
+                    if (i != index) {
+                        self.allocator.free(file.name);
+                    }
+                }
+                try self.dirs.append(selected_file.name);
+
+                self.files.clearAndFree();
+                self.updateFiles() catch |err| {
+                    std.log.err("{}", .{err});
+                };
+                return null;
+            },
+            else => return null,
         }
-
-        for (self.files.items) |file, i| {
-            if (i != index) {
-                self.allocator.free(file.name);
-            }
-        }
-        try self.dirs.append(selected_file.name);
-
-        self.files.clearAndFree();
-        try self.updateFiles();
-        return null;
     }
 
     fn updateFiles(self: *DirWalker) !void {
@@ -471,8 +487,6 @@ const DirWalker = struct {
 
         const parent_path = try (try self.getParentDirString()).toOwnedSliceNull();
         defer self.allocator.free(parent_path);
-
-        std.debug.print("{s}\n", .{parent_path});
 
         var dir = try fs.openDirAbsolute(parent_path, .{ .iterate = true });
         defer dir.close();
@@ -483,7 +497,7 @@ const DirWalker = struct {
             _ = try std.fmt.format(str.writer(), "{s}", .{file.name});
             try self.files.append(File{
                 .name = try str.toOwnedSliceNull(),
-                .is_dir = file.kind == .Directory,
+                .kind = file.kind,
             });
         }
     }
@@ -530,18 +544,23 @@ const FileDialog = struct {
         }
 
         {
-            var file_clicked: ?usize = null;
-            for (self.current_dir.files.items) |file, i| {
-                if (Imgui.button(.{ file.name, .{ .x = 0, .y = 0 } }) and file_clicked == null) {
-                    file_clicked = i;
+            defer Imgui.endChild();
+            if (Imgui.beginChild(.{ "File List", .{ .x = 0, .y = 0 }, false, Imgui.windowFlagsNone })) {
+                var file_clicked: ?usize = null;
+                for (self.current_dir.files.items) |file, i| {
+                    if (Imgui.button(.{ file.name, .{ .x = 0, .y = 0 } }) and file_clicked == null) {
+                        file_clicked = i;
+                    }
                 }
-            }
-            if (file_clicked) |i| {
-                if (try self.current_dir.selectFile(i)) |path| {
-                    defer context.getParentContext().allocator.free(path);
-                    context.console.clearState();
-                    try context.console.loadRom(path);
-                    return false;
+                if (file_clicked) |i| {
+                    if (try self.current_dir.selectFile(i)) |path| {
+                        defer context.getParentContext().allocator.free(path);
+                        context.console.clearState();
+                        context.console.loadRom(path) catch |err| {
+                            std.log.err("{}", .{err});
+                        };
+                        return false;
+                    }
                 }
             }
         }

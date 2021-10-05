@@ -106,6 +106,8 @@ pub const Imgui = struct {
 
     pub const begin = wrap(c.igBegin, empty_options);
     pub const end = wrap(c.igEnd, empty_options);
+    pub const beginChild = wrap(c.igBeginChild_Str, empty_options);
+    pub const endChild = wrap(c.igEndChild, empty_options);
     pub const sameLine = wrap(c.igSameLine, empty_options);
     pub const newLine = wrap(c.igNewLine, empty_options);
 
