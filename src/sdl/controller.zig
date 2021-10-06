@@ -9,20 +9,25 @@ const FieldFlagsDef = flags_.FieldFlagsDef;
 pub const Controller = struct {
     buttons: u8 = 0,
     shift: u4 = 0,
+    read_input: bool = false,
 
     const ff_masks = CreateFlags(Controller, ([_]FieldFlagsDef{
         .{ .field = "buttons", .flags = "RLDUSsBA" },
     })[0..]){};
 
     pub fn strobe(self: *Controller) void {
+        self.buttons = 0;
+        self.shift = 0;
+
+        if (!self.read_input) {
+            return;
+        }
+
         const keys = blk: {
             var length: c_int = 0;
             var ret: [*]const u8 = Sdl.getKeyboardState(.{&length});
             break :blk ret[0..@intCast(usize, length)];
         };
-
-        self.buttons = 0;
-        self.shift = 0;
 
         if (keys[bindings.c.SDL_SCANCODE_RIGHT] != 0) {
             self.setButton("R");

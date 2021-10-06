@@ -52,7 +52,7 @@ pub const ImguiContext = struct {
 
         var game_window = Window.init(
             .{ .game_window = .{} },
-            "NES",
+            try parent_context.allocator.dupeZ(u8, "NES"),
             Imgui.windowFlagsAlwaysAutoResize,
         );
         game_window.closeable = false;
@@ -81,26 +81,19 @@ pub const ImguiContext = struct {
     }
 
     // TODO: very inefficient, not my focus right now
-    fn makeWindowNameUnique(self: *ImguiContext, comptime name: []const u8) []const u8 {
+    fn makeWindowNameUnique(self: *ImguiContext, comptime name: [:0]const u8) ![:0]const u8 {
         if (self.isWindowAvailable(name)) {
-            const tagged = comptime if (std.mem.indexOf(u8, name, "##") != null) true else false;
-            var new_name = comptime blk: {
-                break :blk name ++ if (tagged) "00000" else "##00000";
-            };
-            const num_index = comptime if (tagged) name.len else name.len + 2;
+            const tag_str = comptime if (std.mem.indexOf(u8, name, "##") != null) "" else "##";
+            var str = try StringBuilder.init(self.getParentContext().allocator, null);
+            defer str.deinit();
 
             var i: u16 = 0;
             while (i < 65535) : (i += 1) {
-                if (self.isWindowAvailable(new_name)) {
-                    return new_name;
+                str.reset();
+                _ = try std.fmt.format(str.writer(), "{s}{s}{d:0>5}", .{ name, tag_str, i });
+                if (self.isWindowAvailable(str.buffer.items)) {
+                    return try str.toOwnedSliceNull();
                 }
-                std.fmt.bufPrintIntToSlice(
-                    new_name[num_index..],
-                    i,
-                    10,
-                    .lower,
-                    .{ .width = 5, .fill = '0' },
-                );
             }
             @panic("Someone really went and made 65535 instances of the same window");
         } else {
@@ -162,16 +155,26 @@ pub const ImguiContext = struct {
         if (!Imgui.beginMainMenuBar()) {
             return;
         }
+        defer Imgui.endMainMenuBar();
 
         if (Imgui.beginMenu(.{ "File", true })) {
+            defer Imgui.endMenu();
             if (Imgui.menuItem(.{ "Open Rom", null, false, true })) {
                 try self.openFileDialog(.open_rom);
             }
             _ = Imgui.menuItemPtr(.{ "Exit", null, &self.quit, true });
-            Imgui.endMenu();
         }
 
-        Imgui.endMainMenuBar();
+        if (Imgui.beginMenu(.{ "Tools", true })) {
+            defer Imgui.endMenu();
+            if (Imgui.menuItem(.{ "Hex Editor", null, false, true })) {
+                try self.addWindow(Window.init(
+                    .{ .hex_editor = try HexEditor.init(self.getParentContext().allocator) },
+                    try self.makeWindowNameUnique("Hex Editor"),
+                    Imgui.windowFlagsNone,
+                ));
+            }
+        }
     }
 
     fn openFileDialog(self: *ImguiContext, comptime reason: FileDialogReason) !void {
@@ -179,12 +182,11 @@ pub const ImguiContext = struct {
         if (!self.isWindowAvailable(name)) {
             return;
         }
-        const file_dialog = Window.init(
+        try self.addWindow(Window.init(
             .{ .file_dialog = try FileDialog.init(self.getParentContext().allocator) },
-            name,
+            try self.getParentContext().allocator.dupeZ(u8, name),
             Imgui.windowFlagsNone,
-        );
-        try self.addWindow(file_dialog);
+        ));
     }
 };
 
@@ -193,13 +195,13 @@ const Window = struct {
 
     impl: WindowImpl,
 
-    title: []const u8,
+    title: [:0]const u8,
     flags: Flags,
 
     closeable: bool = true,
     open: bool = true,
 
-    fn init(impl: WindowImpl, title: []const u8, flags: Flags) Window {
+    fn init(impl: WindowImpl, title: [:0]const u8, flags: Flags) Window {
         return Window{
             .impl = impl,
 
@@ -210,6 +212,7 @@ const Window = struct {
 
     fn deinit(self: Window, allocator: *Allocator) void {
         self.impl.deinit(allocator);
+        allocator.free(self.title);
     }
 
     fn draw(self: *Window, context: *ImguiContext) !void {
@@ -217,13 +220,11 @@ const Window = struct {
             return;
         }
 
-        const c_title = @ptrCast([*]const u8, self.title);
-
         defer Imgui.end();
         if (self.closeable) {
             var new_open: bool = self.open;
             defer self.open = new_open;
-            if (Imgui.begin(.{ c_title, &new_open, self.flags })) {
+            if (Imgui.begin(.{ self.title, &new_open, self.flags })) {
                 if (new_open) {
                     new_open = try self.impl.draw(context);
                 } else {
@@ -231,7 +232,7 @@ const Window = struct {
                     std.log.debug("Closed window: {s}", .{self.title});
                 }
             }
-        } else if (Imgui.begin(.{ c_title, null, self.flags })) {
+        } else if (Imgui.begin(.{ self.title, null, self.flags })) {
             _ = try self.impl.draw(context);
         }
     }
@@ -240,12 +241,13 @@ const Window = struct {
 const WindowImpl = union(enum) {
     game_window: GameWindow,
     file_dialog: FileDialog,
+    hex_editor: HexEditor,
 
-    fn deinit(self: WindowImpl, allocator: *Allocator) void {
-        _ = allocator;
+    fn deinit(self: WindowImpl, _: *Allocator) void {
         switch (self) {
             .game_window => {},
             .file_dialog => |x| x.deinit(),
+            .hex_editor => |x| x.deinit(),
         }
     }
 
@@ -253,6 +255,7 @@ const WindowImpl = union(enum) {
         switch (self.*) {
             .game_window => |x| return x.draw(context.*),
             .file_dialog => |*x| return x.draw(context),
+            .hex_editor => |*x| return x.draw(context.*),
         }
     }
 
@@ -260,12 +263,15 @@ const WindowImpl = union(enum) {
         switch (self.*) {
             .game_window => {},
             .file_dialog => {},
+            .hex_editor => {},
         }
     }
 };
 
 const GameWindow = struct {
     fn draw(_: GameWindow, context: ImguiContext) !bool {
+        context.console.controller.read_input = Imgui.isWindowFocused(.{0});
+
         const pixel_buffer = &context.game_pixel_buffer;
 
         try Gl.bindTexture(.{ c.GL_TEXTURE_2D, pixel_buffer.texture });
@@ -323,7 +329,12 @@ const StringBuilder = struct {
         return RefBuffer(u8).from(allocator, self.toOwnedSlice());
     }
 
-    fn clear(self: *StringBuilder) void {
+    /// Resets len, but not capacity, memory is not freed
+    fn reset(self: *StringBuilder) void {
+        self.buffer.resize(0) catch unreachable;
+    }
+
+    fn clearAndFree(self: *StringBuilder) void {
         self.buffer.clearAndFree();
     }
 
@@ -397,7 +408,7 @@ const DirWalker = struct {
         defer str.deinit();
 
         while (dir_strings.next()) |dir| {
-            str.clear();
+            str.reset();
             try std.fmt.format(str.writer(), "{s}", .{dir});
             try dirs.append(try str.toOwnedSliceNull());
         }
@@ -493,7 +504,7 @@ const DirWalker = struct {
 
         var dir_iter = dir.iterate();
         while (try dir_iter.next()) |file| {
-            str.clear();
+            str.reset();
             _ = try std.fmt.format(str.writer(), "{s}", .{file.name});
             try self.files.append(File{
                 .name = try str.toOwnedSliceNull(),
@@ -566,5 +577,63 @@ const FileDialog = struct {
         }
 
         return true;
+    }
+};
+
+const HexEditor = struct {
+    allocator: *Allocator,
+
+    memory: Memory = .cpu_ram,
+    value_strs: StringBuilder,
+
+    const Memory = enum {
+        cpu_ram,
+    };
+
+    fn init(allocator: *Allocator) !HexEditor {
+        return HexEditor{
+            .allocator = allocator,
+            .value_strs = try StringBuilder.init(allocator, null),
+        };
+    }
+
+    fn deinit(self: HexEditor) void {
+        self.value_strs.deinit();
+    }
+
+    fn draw(self: *HexEditor, context: ImguiContext) !bool {
+        // TODO: add update rate limiter
+        self.updateValues(context) catch |err| {
+            std.log.err("{}", .{err});
+            return false;
+        };
+
+        const value_strs = self.value_strs.buffer.items;
+
+        defer Imgui.endTable();
+        if (Imgui.beginTable(.{ "Memory Table", 16, 0, .{ .x = 0, .y = 0 }, 0 })) {
+            var i: usize = 0;
+            while (i < value_strs.len) : (i += 3) {
+                if (Imgui.tableNextColumn()) {
+                    Imgui.text(value_strs[i .. i + 2 :0]);
+                    // const buf = vals[i .. i + 2 :0];
+                    // _ = c.igInputText("", buf, 2, 0, null, null);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    fn updateValues(self: *HexEditor, context: ImguiContext) !void {
+        const slice = switch (self.memory) {
+            .cpu_ram => context.console.cpu.mem.ram,
+        };
+
+        self.value_strs.reset();
+        var writer = self.value_strs.writer();
+        for (slice) |byte| {
+            try std.fmt.format(writer, "{x:0>2}\x00", .{byte});
+        }
     }
 };

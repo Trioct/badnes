@@ -100,6 +100,7 @@ pub const Imgui = struct {
     pub const opengl3RenderDrawData = wrap(c.ImGui_ImplOpenGL3_RenderDrawData, empty_options);
     pub const getDrawData = wrap(c.igGetDrawData, empty_options);
 
+    pub const isWindowFocused = wrap(c.igIsWindowFocused, empty_options);
     pub const findWindowByName = wrap(c.igFindWindowByName, .{ .imgui = .{ .optional_to_error = false } });
     pub const setNextWindowSize = wrap(c.igSetNextWindowSize, empty_options);
     pub const setNextWindowContentSize = wrap(c.igSetNextWindowContentSize, empty_options);
@@ -121,6 +122,12 @@ pub const Imgui = struct {
     pub const endMainMenuBar = wrap(c.igEndMainMenuBar, empty_options);
     pub const menuItem = wrap(c.igMenuItem_Bool, empty_options);
     pub const menuItemPtr = wrap(c.igMenuItem_BoolPtr, empty_options);
+
+    pub const beginTable = wrap(c.igBeginTable, empty_options);
+    pub const endTable = wrap(c.igEndTable, empty_options);
+    pub const tableNextRow = wrap(c.igTableNextRow, empty_options);
+    pub const tableNextColumn = wrap(c.igTableNextColumn, empty_options);
+    pub const tableSetColumnIndex = wrap(c.igTableSetColumnIndex, empty_options);
 
     pub fn text(str: [:0]const u8) void {
         if (str.len != 0) {
