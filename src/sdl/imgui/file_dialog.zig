@@ -91,7 +91,7 @@ const DirWalker = struct {
         var dirs = ArrayList([:0]const u8).init(allocator);
         errdefer dirs.deinit();
 
-        var str = try util.StringBuilder.init(allocator, null);
+        var str = util.StringBuilder.init(allocator);
         defer str.deinit();
 
         while (dir_strings.next()) |dir| {
@@ -124,7 +124,8 @@ const DirWalker = struct {
     }
 
     fn getParentDirString(self: DirWalker) !util.StringBuilder {
-        var str = try util.StringBuilder.init(self.allocator, null);
+        var str = util.StringBuilder.init(self.allocator);
+        errdefer str.deinit();
 
         for (self.dirs.items) |dir| {
             try std.fmt.format(str.writer(), "{s}/", .{dir});
@@ -180,7 +181,7 @@ const DirWalker = struct {
     }
 
     fn updateFiles(self: *DirWalker) !void {
-        var str = try util.StringBuilder.init(self.allocator, null);
+        var str = util.StringBuilder.init(self.allocator);
         defer str.deinit();
 
         const parent_path = try (try self.getParentDirString()).toOwnedSliceNull();

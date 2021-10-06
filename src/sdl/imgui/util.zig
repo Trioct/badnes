@@ -5,16 +5,16 @@ const ArrayList = std.ArrayList;
 pub const StringBuilder = struct {
     buffer: ArrayList(u8),
 
-    pub fn init(allocator: *Allocator, capacity: ?usize) !StringBuilder {
-        if (capacity) |cap| {
-            return StringBuilder{
-                .buffer = try ArrayList(u8).initCapacity(allocator, cap),
-            };
-        } else {
-            return StringBuilder{
-                .buffer = ArrayList(u8).init(allocator),
-            };
-        }
+    pub fn init(allocator: *Allocator) StringBuilder {
+        return StringBuilder{
+            .buffer = ArrayList(u8).init(allocator),
+        };
+    }
+
+    pub fn initCapacity(allocator: *Allocator, capacity: usize) !StringBuilder {
+        return StringBuilder{
+            .buffer = try ArrayList(u8).initCapacity(allocator, capacity),
+        };
     }
 
     pub fn deinit(self: StringBuilder) void {
@@ -90,4 +90,50 @@ pub fn RefBuffer(comptime T: type) type {
             }
         }
     };
+}
+
+const testing = std.testing;
+const expectEqual = testing.expectEqual;
+const expectEqualSlices = testing.expectEqualSlices;
+
+test "StringBuilder" {
+    var str = StringBuilder.init(testing.allocator);
+    defer str.deinit();
+
+    _ = try str.write("Hell");
+    _ = try std.fmt.format(str.writer(), "o, {s}!", .{"World"});
+
+    const str_owned = str.toOwnedSlice();
+    defer testing.allocator.free(str_owned);
+
+    try expectEqualSlices(u8, "Hello, World!", str_owned);
+
+    _ = try std.fmt.format(str.writer(), "Goodbye, World!", .{});
+    try expectEqualSlices(u8, "Goodbye, World!", str.buffer.items);
+
+    str.reset();
+    _ = try std.fmt.format(str.writer(), "{} + {} = ???", .{ 9, 10 });
+
+    try expectEqualSlices(u8, "9 + 10 = ???", str.buffer.items);
+    try expectEqualSlices(u8, "Hello, World!", str_owned);
+}
+
+test "RefBuffer" {
+    const meme = "it's me, chris pratt.";
+    const ref = blk: {
+        const scoped = try RefBuffer(u8).init(testing.allocator, meme.len);
+        defer scoped.unref();
+
+        std.mem.copy(u8, scoped.slice, meme);
+
+        break :blk scoped.ref();
+    };
+    defer ref.unref();
+
+    ref.ref().unref();
+    ref.ref().unref();
+    ref.ref().unref();
+
+    try expectEqual(@as(usize, 1), ref.ref_count.*);
+    try expectEqualSlices(u8, meme, ref.slice);
 }

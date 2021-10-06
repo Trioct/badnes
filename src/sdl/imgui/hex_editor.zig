@@ -14,9 +14,9 @@ pub const HexEditor = struct {
         cpu_ram,
     };
 
-    pub fn init(allocator: *Allocator) !HexEditor {
+    pub fn init(allocator: *Allocator) HexEditor {
         return HexEditor{
-            .value_strs = try util.StringBuilder.init(allocator, null),
+            .value_strs = util.StringBuilder.init(allocator),
         };
     }
 

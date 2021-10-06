@@ -113,5 +113,6 @@ test {
     _ = @import("ppu/common.zig");
     _ = @import("ppu/fast.zig");
     _ = @import("ppu.zig");
+    _ = @import("sdl/imgui/util.zig");
     _ = @import("video.zig");
 }

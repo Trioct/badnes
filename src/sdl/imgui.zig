@@ -86,7 +86,7 @@ pub const ImguiContext = struct {
     fn makeWindowNameUnique(self: *ImguiContext, comptime name: [:0]const u8) ![:0]const u8 {
         if (self.isWindowAvailable(name)) {
             const tag_str = comptime if (std.mem.indexOf(u8, name, "##") != null) "" else "##";
-            var str = try util.StringBuilder.init(self.getParentContext().allocator, null);
+            var str = util.StringBuilder.init(self.getParentContext().allocator);
             defer str.deinit();
 
             var i: u16 = 0;
@@ -171,7 +171,7 @@ pub const ImguiContext = struct {
             defer Imgui.endMenu();
             if (Imgui.menuItem(.{ "Hex Editor", null, false, true })) {
                 try self.addWindow(Window.init(
-                    .{ .hex_editor = try HexEditor.init(self.getParentContext().allocator) },
+                    .{ .hex_editor = HexEditor.init(self.getParentContext().allocator) },
                     try self.makeWindowNameUnique("Hex Editor"),
                     Imgui.windowFlagsNone,
                 ));
