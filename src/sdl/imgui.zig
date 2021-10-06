@@ -1,7 +1,5 @@
 const std = @import("std");
-const fs = std.fs;
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
 const HashMap = std.StringHashMap;
 
 const bindings = @import("bindings.zig");
@@ -10,10 +8,14 @@ const Sdl = bindings.Sdl;
 const Gl = bindings.Gl;
 const Imgui = bindings.Imgui;
 
+const Console = @import("../console.zig").Console;
+
 const Context = @import("context.zig").Context;
 const PixelBuffer = @import("basic_video.zig").PixelBuffer;
 
-const Console = @import("../console.zig").Console;
+const util = @import("imgui/util.zig");
+const FileDialog = @import("imgui/file_dialog.zig").FileDialog;
+const HexEditor = @import("imgui/hex_editor.zig").HexEditor;
 
 pub const ImguiContext = struct {
     console: *Console(.{ .precision = .accurate, .method = .sdl }),
@@ -84,7 +86,7 @@ pub const ImguiContext = struct {
     fn makeWindowNameUnique(self: *ImguiContext, comptime name: [:0]const u8) ![:0]const u8 {
         if (self.isWindowAvailable(name)) {
             const tag_str = comptime if (std.mem.indexOf(u8, name, "##") != null) "" else "##";
-            var str = try StringBuilder.init(self.getParentContext().allocator, null);
+            var str = try util.StringBuilder.init(self.getParentContext().allocator, null);
             defer str.deinit();
 
             var i: u16 = 0;
@@ -113,7 +115,7 @@ pub const ImguiContext = struct {
         std.log.debug("Added window: {s}", .{window.title});
     }
 
-    fn getParentContext(self: *ImguiContext) *Context(true) {
+    pub fn getParentContext(self: *ImguiContext) *Context(true) {
         return @fieldParentPtr(Context(true), "extension_context", self);
     }
 
@@ -293,347 +295,5 @@ const GameWindow = struct {
         });
 
         return true;
-    }
-};
-
-const StringBuilder = struct {
-    buffer: ArrayList(u8),
-
-    fn init(allocator: *Allocator, capacity: ?usize) !StringBuilder {
-        if (capacity) |cap| {
-            return StringBuilder{
-                .buffer = try ArrayList(u8).initCapacity(allocator, cap),
-            };
-        } else {
-            return StringBuilder{
-                .buffer = ArrayList(u8).init(allocator),
-            };
-        }
-    }
-
-    fn deinit(self: StringBuilder) void {
-        self.buffer.deinit();
-    }
-
-    fn toOwnedSlice(self: *StringBuilder) []u8 {
-        return self.buffer.toOwnedSlice();
-    }
-
-    fn toOwnedSliceNull(self: *StringBuilder) ![:0]u8 {
-        try self.buffer.append('\x00');
-        const bytes = self.buffer.toOwnedSlice();
-        return @ptrCast([*:0]u8, bytes)[0 .. bytes.len - 1 :0];
-    }
-
-    fn toRefBuffer(self: *StringBuilder, allocator: *Allocator) !RefBuffer(u8) {
-        return RefBuffer(u8).from(allocator, self.toOwnedSlice());
-    }
-
-    /// Resets len, but not capacity, memory is not freed
-    fn reset(self: *StringBuilder) void {
-        self.buffer.resize(0) catch unreachable;
-    }
-
-    fn clearAndFree(self: *StringBuilder) void {
-        self.buffer.clearAndFree();
-    }
-
-    fn writer(self: *StringBuilder) std.io.Writer(*StringBuilder, Allocator.Error, StringBuilder.write) {
-        return .{ .context = self };
-    }
-
-    fn write(self: *StringBuilder, bytes: []const u8) Allocator.Error!usize {
-        try self.buffer.appendSlice(bytes);
-        return bytes.len;
-    }
-};
-
-fn RefBuffer(comptime T: type) type {
-    return struct {
-        const Self = @This();
-
-        allocator: *Allocator,
-        slice: []T,
-        ref_count: *usize,
-
-        fn init(allocator: *Allocator, size: usize) !Self {
-            return Self.from(allocator, try allocator.alloc(T, size));
-        }
-
-        fn from(allocator: *Allocator, slice: []T) !Self {
-            errdefer allocator.free(slice);
-            var ref_count = try allocator.create(usize);
-            ref_count.* = 1;
-            return Self{
-                .allocator = allocator,
-                .slice = slice,
-                .ref_count = ref_count,
-            };
-        }
-
-        fn ref(self: Self) Self {
-            self.ref_count.* += 1;
-            return self;
-        }
-
-        fn unref(self: Self) void {
-            self.ref_count.* -= 1;
-            if (self.ref_count.* == 0) {
-                self.allocator.free(self.slice);
-                self.allocator.destroy(self.ref_count);
-            }
-        }
-    };
-}
-
-// Janky api, fix if used in a contxt other than file dialog
-const DirWalker = struct {
-    allocator: *Allocator,
-
-    dirs: ArrayList([:0]const u8),
-    files: ArrayList(File),
-
-    const File = struct {
-        name: [:0]const u8,
-        kind: fs.Dir.Entry.Kind,
-    };
-
-    fn init(allocator: *Allocator, path: []const u8, buffer: []u8) !DirWalker {
-        var dir_strings = std.mem.split(u8, try fs.cwd().realpath(path, buffer), "/");
-
-        var dirs = ArrayList([:0]const u8).init(allocator);
-        errdefer dirs.deinit();
-
-        var str = try StringBuilder.init(allocator, null);
-        defer str.deinit();
-
-        while (dir_strings.next()) |dir| {
-            str.reset();
-            try std.fmt.format(str.writer(), "{s}", .{dir});
-            try dirs.append(try str.toOwnedSliceNull());
-        }
-
-        var self = DirWalker{
-            .allocator = allocator,
-            .dirs = dirs,
-            .files = ArrayList(File).init(allocator),
-        };
-
-        try self.updateFiles();
-
-        return self;
-    }
-
-    fn deinit(self: DirWalker) void {
-        for (self.dirs.items) |dir| {
-            self.allocator.free(dir);
-        }
-        self.dirs.deinit();
-
-        for (self.files.items) |file| {
-            self.allocator.free(file.name);
-        }
-        self.files.deinit();
-    }
-
-    fn getParentDirString(self: DirWalker) !StringBuilder {
-        var str = try StringBuilder.init(self.allocator, null);
-
-        for (self.dirs.items) |dir| {
-            try std.fmt.format(str.writer(), "{s}/", .{dir});
-        }
-
-        return str;
-    }
-
-    fn selectParentDir(self: *DirWalker, index: usize) !void {
-        var i: usize = self.dirs.items.len;
-        while (i > index + 1) : (i -= 1) {
-            const dir = self.dirs.pop();
-            self.allocator.free(dir);
-        }
-
-        for (self.files.items) |file| {
-            self.allocator.free(file.name);
-        }
-        self.files.clearAndFree();
-
-        self.updateFiles() catch |err| {
-            std.log.err("{}: Failed to select file", .{err});
-        };
-    }
-
-    fn selectFile(self: *DirWalker, index: usize) !?[:0]const u8 {
-        const selected_file = self.files.items[index];
-
-        switch (selected_file.kind) {
-            .File => {
-                var parent_str = try self.getParentDirString();
-                defer parent_str.deinit();
-
-                _ = try parent_str.write(selected_file.name);
-                return try parent_str.toOwnedSliceNull();
-            },
-            .Directory => {
-                for (self.files.items) |file, i| {
-                    if (i != index) {
-                        self.allocator.free(file.name);
-                    }
-                }
-                try self.dirs.append(selected_file.name);
-
-                self.files.clearAndFree();
-                self.updateFiles() catch |err| {
-                    std.log.err("{}", .{err});
-                };
-                return null;
-            },
-            else => return null,
-        }
-    }
-
-    fn updateFiles(self: *DirWalker) !void {
-        var str = try StringBuilder.init(self.allocator, null);
-        defer str.deinit();
-
-        const parent_path = try (try self.getParentDirString()).toOwnedSliceNull();
-        defer self.allocator.free(parent_path);
-
-        var dir = try fs.openDirAbsolute(parent_path, .{ .iterate = true });
-        defer dir.close();
-
-        var dir_iter = dir.iterate();
-        while (try dir_iter.next()) |file| {
-            str.reset();
-            _ = try std.fmt.format(str.writer(), "{s}", .{file.name});
-            try self.files.append(File{
-                .name = try str.toOwnedSliceNull(),
-                .kind = file.kind,
-            });
-        }
-    }
-};
-
-const FileDialog = struct {
-    buffer: RefBuffer(u8),
-    current_dir: DirWalker,
-
-    fn init(allocator: *Allocator) !FileDialog {
-        var buffer = try RefBuffer(u8).init(allocator, 1024);
-        const current_dir = try DirWalker.init(allocator, ".", buffer.slice);
-
-        return FileDialog{
-            .buffer = buffer,
-            .current_dir = current_dir,
-        };
-    }
-
-    fn deinit(self: FileDialog) void {
-        self.current_dir.deinit();
-        self.buffer.unref();
-    }
-
-    fn draw(self: *FileDialog, context: *ImguiContext) !bool {
-        {
-            var dir_clicked: ?usize = null;
-            for (self.current_dir.dirs.items) |dir, i| {
-                const dir_name = if (i == 0) "/" else dir;
-                if (Imgui.button(.{ dir_name, .{ .x = 0, .y = 0 } }) and dir_clicked == null) {
-                    dir_clicked = i;
-                }
-                if (i != 0) {
-                    Imgui.sameLine(.{ 0, 0 });
-                    Imgui.text("/");
-                }
-                Imgui.sameLine(.{ 0, 0 });
-            }
-            Imgui.newLine();
-
-            if (dir_clicked) |i| {
-                try self.current_dir.selectParentDir(i);
-            }
-        }
-
-        {
-            defer Imgui.endChild();
-            if (Imgui.beginChild(.{ "File List", .{ .x = 0, .y = 0 }, false, Imgui.windowFlagsNone })) {
-                var file_clicked: ?usize = null;
-                for (self.current_dir.files.items) |file, i| {
-                    if (Imgui.button(.{ file.name, .{ .x = 0, .y = 0 } }) and file_clicked == null) {
-                        file_clicked = i;
-                    }
-                }
-                if (file_clicked) |i| {
-                    if (try self.current_dir.selectFile(i)) |path| {
-                        defer context.getParentContext().allocator.free(path);
-                        context.console.clearState();
-                        context.console.loadRom(path) catch |err| {
-                            std.log.err("{}", .{err});
-                        };
-                        return false;
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-};
-
-const HexEditor = struct {
-    allocator: *Allocator,
-
-    memory: Memory = .cpu_ram,
-    value_strs: StringBuilder,
-
-    const Memory = enum {
-        cpu_ram,
-    };
-
-    fn init(allocator: *Allocator) !HexEditor {
-        return HexEditor{
-            .allocator = allocator,
-            .value_strs = try StringBuilder.init(allocator, null),
-        };
-    }
-
-    fn deinit(self: HexEditor) void {
-        self.value_strs.deinit();
-    }
-
-    fn draw(self: *HexEditor, context: ImguiContext) !bool {
-        // TODO: add update rate limiter
-        self.updateValues(context) catch |err| {
-            std.log.err("{}", .{err});
-            return false;
-        };
-
-        const value_strs = self.value_strs.buffer.items;
-
-        defer Imgui.endTable();
-        if (Imgui.beginTable(.{ "Memory Table", 16, 0, .{ .x = 0, .y = 0 }, 0 })) {
-            var i: usize = 0;
-            while (i < value_strs.len) : (i += 3) {
-                if (Imgui.tableNextColumn()) {
-                    Imgui.text(value_strs[i .. i + 2 :0]);
-                    // const buf = vals[i .. i + 2 :0];
-                    // _ = c.igInputText("", buf, 2, 0, null, null);
-                }
-            }
-        }
-
-        return true;
-    }
-
-    fn updateValues(self: *HexEditor, context: ImguiContext) !void {
-        const slice = switch (self.memory) {
-            .cpu_ram => context.console.cpu.mem.ram,
-        };
-
-        self.value_strs.reset();
-        var writer = self.value_strs.writer();
-        for (slice) |byte| {
-            try std.fmt.format(writer, "{x:0>2}\x00", .{byte});
-        }
     }
 };
