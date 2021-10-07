@@ -63,6 +63,7 @@ pub const FileDialog = struct {
                         context.console.loadRom(path) catch |err| {
                             std.log.err("{}", .{err});
                         };
+                        try context.unpause();
                         return false;
                     }
                 }

@@ -1,5 +1,4 @@
 const std = @import("std");
-const time = std.time;
 const Allocator = std.mem.Allocator;
 
 const build_options = @import("build_options");
@@ -59,9 +58,6 @@ pub fn Context(comptime precision: Precision, comptime using_imgui: bool) type {
 
         console: Console(.{ .precision = precision, .method = .sdl }),
 
-        last_frame_time: i128,
-        next_frame_time: i128,
-
         pub const DrawOptions = struct {
             timing: enum {
                 untimed,
@@ -80,9 +76,6 @@ pub fn Context(comptime precision: Precision, comptime using_imgui: bool) type {
                 .gl_context = undefined,
                 .audio_context = undefined,
                 .extension_context = undefined,
-
-                .last_frame_time = undefined,
-                .next_frame_time = undefined,
             };
         }
 
@@ -114,10 +107,6 @@ pub fn Context(comptime precision: Precision, comptime using_imgui: bool) type {
             self.console.init(allocator, self.getGamePixelBuffer(), &self.audio_context);
 
             self.extension_context = try ExtensionContext.init(self);
-
-            const now = time.nanoTimestamp();
-            self.last_frame_time = now;
-            self.next_frame_time = now;
         }
 
         pub fn deinit(self: *Self) void {
@@ -135,29 +124,6 @@ pub fn Context(comptime precision: Precision, comptime using_imgui: bool) type {
 
         pub inline fn mainLoop(self: *Self) !void {
             return self.extension_context.mainLoop();
-        }
-
-        pub fn draw(self: *Self, draw_options: DrawOptions) !i128 {
-            try self.extension_context.draw();
-            Sdl.glSwapWindow(.{self.window});
-
-            const frame_ns = @floatToInt(i128, time.ns_per_s * draw_options.frametime);
-            const now = time.nanoTimestamp();
-            const to_sleep = self.next_frame_time - now;
-            var passed = now - self.last_frame_time;
-
-            switch (draw_options.timing) {
-                .untimed => {},
-                .timed => if (to_sleep > 0) {
-                    time.sleep(@intCast(u64, to_sleep));
-                    passed += to_sleep;
-                },
-            }
-
-            self.next_frame_time += frame_ns;
-            self.last_frame_time += passed;
-
-            return passed;
         }
     };
 }

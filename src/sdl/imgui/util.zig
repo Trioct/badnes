@@ -1,4 +1,5 @@
 const std = @import("std");
+const time = std.time;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
@@ -91,6 +92,64 @@ pub fn RefBuffer(comptime T: type) type {
         }
     };
 }
+
+pub const FrameTimer = struct {
+    frame_time: f64,
+
+    paused_timestamp: ?i128 = null,
+    last_frame_timestamp: i128,
+    next_frame_timestamp: i128,
+
+    pub fn init(frame_time: ?f64) FrameTimer {
+        const ft_default = frame_time orelse (4 * (261 * 341 + 340.5)) / 21477272.0;
+        const now = time.nanoTimestamp();
+        return FrameTimer{
+            .frame_time = ft_default,
+            .last_frame_timestamp = now,
+            .next_frame_timestamp = now + @floatToInt(i128, time.ns_per_s * ft_default),
+        };
+    }
+
+    pub fn waitUntilNext(self: *FrameTimer) i128 {
+        const frame_ns = @floatToInt(i128, time.ns_per_s * self.frame_time);
+        const now = time.nanoTimestamp();
+        const to_sleep = self.next_frame_timestamp - now;
+        var passed = now - self.last_frame_timestamp;
+
+        if (to_sleep > 0) {
+            time.sleep(@intCast(u64, to_sleep));
+            passed += to_sleep;
+        }
+
+        self.last_frame_timestamp += passed;
+        self.next_frame_timestamp += frame_ns;
+
+        return passed;
+    }
+
+    pub fn pause(self: *FrameTimer) void {
+        if (self.paused_timestamp != null) {
+            std.log.warn("Tried to pause an already paused FrameTimer", .{});
+            return;
+        }
+        self.paused_timestamp = time.nanoTimestamp();
+    }
+
+    pub fn unpause(self: *FrameTimer) void {
+        const paused_timestamp = self.paused_timestamp orelse {
+            std.log.warn("Tried to unpause an already unpaused FrameTimer", .{});
+            return;
+        };
+
+        const now = time.nanoTimestamp();
+        const passed = now - paused_timestamp;
+
+        self.last_frame_timestamp += passed;
+        self.next_frame_timestamp += passed;
+
+        self.paused_timestamp = null;
+    }
+};
 
 const testing = std.testing;
 const expectEqual = testing.expectEqual;

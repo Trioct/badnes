@@ -9,11 +9,14 @@ const Gl = bindings.Gl;
 const Precision = @import("../console.zig").Precision;
 const Context = @import("context.zig").Context;
 
+const util = @import("imgui/util.zig");
+
 pub fn BasicContext(comptime precision: Precision) type {
     return struct {
         const Self = @This();
 
         pixel_buffer: PixelBuffer,
+        frame_timer: util.FrameTimer,
 
         pub fn init(parent_context: *Context(precision, false)) !Self {
             try Gl.viewport(.{ 0, 0, 256 * 3, 240 * 3 });
@@ -24,6 +27,7 @@ pub fn BasicContext(comptime precision: Precision) type {
 
             var self = Self{
                 .pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
+                .frame_timer = util.FrameTimer.init(null),
             };
 
             self.pixel_buffer.scale = 3;
@@ -35,12 +39,16 @@ pub fn BasicContext(comptime precision: Precision) type {
             self.pixel_buffer.deinit(allocator);
         }
 
+        fn getParentContext(self: *Self) *Context(precision, false) {
+            return @fieldParentPtr(Context(precision, false), "extension_context", self);
+        }
+
         pub fn getGamePixelBuffer(self: *Self) *PixelBuffer {
             return &self.pixel_buffer;
         }
 
         pub fn mainLoop(self: *Self) !void {
-            var parent_context = @fieldParentPtr(Context(precision, false), "extension_context", self);
+            var parent_context = self.getParentContext();
             const console = &parent_context.console;
             var event: c.SDL_Event = undefined;
 
@@ -63,7 +71,8 @@ pub fn BasicContext(comptime precision: Precision) type {
                 if (console.ppu.present_frame) {
                     frames += 1;
                     console.ppu.present_frame = false;
-                    total_time += try parent_context.draw(.{ .timing = .timed });
+                    try self.draw();
+                    total_time += self.frame_timer.waitUntilNext();
 
                     if (total_time > std.time.ns_per_s) {
                         //std.debug.print("FPS: {}\n", .{frames});
@@ -95,7 +104,7 @@ pub fn BasicContext(comptime precision: Precision) type {
             }
         }
 
-        pub fn draw(self: Self) !void {
+        pub fn draw(self: *Self) !void {
             try Gl.pushClientAttrib(.{c.GL_CLIENT_ALL_ATTRIB_BITS});
             try Gl.pushMatrix();
 
@@ -114,6 +123,8 @@ pub fn BasicContext(comptime precision: Precision) type {
 
             try Gl.popMatrix();
             try Gl.popClientAttrib();
+
+            Sdl.glSwapWindow(.{self.getParentContext().window});
         }
     };
 }

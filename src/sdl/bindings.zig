@@ -116,10 +116,12 @@ pub const Imgui = struct {
     pub const beginPopupModal = wrap(c.igBeginPopupModal, empty_options);
     pub const endPopup = wrap(c.igEndPopup, empty_options);
 
-    pub const beginMenu = wrap(c.igBeginMenu, empty_options);
-    pub const endMenu = wrap(c.igEndMenu, empty_options);
     pub const beginMainMenuBar = wrap(c.igBeginMainMenuBar, empty_options);
     pub const endMainMenuBar = wrap(c.igEndMainMenuBar, empty_options);
+    pub const beginMenuBar = wrap(c.igBeginMenuBar, empty_options);
+    pub const endMenuBar = wrap(c.igEndMenuBar, empty_options);
+    pub const beginMenu = wrap(c.igBeginMenu, empty_options);
+    pub const endMenu = wrap(c.igEndMenu, empty_options);
     pub const menuItem = wrap(c.igMenuItem_Bool, empty_options);
     pub const menuItemPtr = wrap(c.igMenuItem_BoolPtr, empty_options);
 

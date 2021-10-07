@@ -21,10 +21,12 @@ pub const ImguiContext = struct {
     console: *Console(.{ .precision = .accurate, .method = .sdl }),
     windows: HashMap(Window),
 
+    /// Do not manually set this, use the pause/unpause functions
     paused: bool = false,
     quit: bool = false,
 
     game_pixel_buffer: PixelBuffer,
+    frame_timer: util.FrameTimer,
 
     const FileDialogReason = enum {
         open_rom,
@@ -47,7 +49,9 @@ pub const ImguiContext = struct {
             .windows = HashMap(Window).init(parent_context.allocator),
 
             .game_pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
+            .frame_timer = util.FrameTimer.init(null),
         };
+        try self.pause();
 
         self.game_pixel_buffer.scale = 3;
 
@@ -124,9 +128,41 @@ pub const ImguiContext = struct {
         return &self.game_pixel_buffer;
     }
 
+    /// Pauses the console, sets vsync as the frame syncing method
+    pub fn pause(self: *ImguiContext) !void {
+        if (self.paused) {
+            return;
+        }
+        self.paused = true;
+        self.frame_timer.pause();
+        self.getParentContext().audio_context.pause();
+        try Sdl.glSetSwapInterval(.{1});
+    }
+
+    /// Unpauses the console, sync frames to the console (~60fps)
+    pub fn unpause(self: *ImguiContext) !void {
+        if (!self.paused) {
+            return;
+        }
+        self.paused = false;
+        self.frame_timer.unpause();
+        self.getParentContext().audio_context.unpause();
+        try Sdl.glSetSwapInterval(.{0});
+    }
+
+    pub fn togglePause(self: *ImguiContext) !void {
+        if (self.paused) {
+            return self.unpause();
+        } else {
+            return self.pause();
+        }
+    }
+
     pub fn mainLoop(self: *ImguiContext) !void {
         var parent_context = self.getParentContext();
         var event: c.SDL_Event = undefined;
+
+        parent_context.audio_context.unpause();
 
         var total_time: i128 = 0;
         var frames: usize = 0;
@@ -134,27 +170,30 @@ pub const ImguiContext = struct {
             while (Sdl.pollEvent(.{&event}) == 1) {
                 _ = Imgui.sdl2ProcessEvent(.{&event});
                 switch (event.type) {
+                    c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
+                        c.SDLK_SPACE => try self.togglePause(),
+                        else => {},
+                    },
                     c.SDL_QUIT => break :mloop,
                     else => {},
                 }
             }
 
+            if (self.paused or !self.console.cart.rom_loaded) {
+                try self.draw();
+                continue;
+            }
+
             if (self.console.ppu.present_frame) {
                 frames += 1;
                 self.console.ppu.present_frame = false;
-                total_time += try parent_context.draw(.{ .timing = .timed });
+                try self.draw();
+                total_time += self.frame_timer.waitUntilNext();
 
                 if (total_time > std.time.ns_per_s) {
-                    //std.debug.print("FPS: {}\n", .{frames});
                     frames = 0;
                     total_time -= std.time.ns_per_s;
                 }
-                if (frames > 4) {
-                    parent_context.audio_context.unpause();
-                }
-            } else if (self.paused) {
-                _ = try parent_context.draw(.{ .timing = .timed });
-                continue;
             }
 
             // Batch run instructions/cycles to not get bogged down by Sdl.pollEvent
@@ -196,6 +235,8 @@ pub const ImguiContext = struct {
 
         Imgui.render();
         Imgui.opengl3RenderDrawData(.{try Imgui.getDrawData()});
+
+        Sdl.glSwapWindow(.{self.getParentContext().window});
     }
 
     fn drawMainMenu(self: *ImguiContext) !void {
@@ -273,14 +314,14 @@ const Window = struct {
             defer self.open = new_open;
             if (Imgui.begin(.{ self.title, &new_open, self.flags })) {
                 if (new_open) {
-                    new_open = try self.impl.draw(context);
+                    new_open = try self.impl.draw(self, context);
                 } else {
                     try self.impl.onClosed(context);
                     std.log.debug("Closed window: {s}", .{self.title});
                 }
             }
         } else if (Imgui.begin(.{ self.title, null, self.flags })) {
-            _ = try self.impl.draw(context);
+            _ = try self.impl.draw(self, context);
         }
     }
 };
@@ -298,7 +339,7 @@ const WindowImpl = union(enum) {
         }
     }
 
-    fn draw(self: *WindowImpl, context: *ImguiContext) !bool {
+    fn draw(self: *WindowImpl, _: *Window, context: *ImguiContext) !bool {
         switch (self.*) {
             .game_window => |x| return x.draw(context.*),
             .file_dialog => |*x| return x.draw(context),
