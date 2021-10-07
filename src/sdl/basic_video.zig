@@ -3,73 +3,120 @@ const Allocator = std.mem.Allocator;
 
 const bindings = @import("bindings.zig");
 const c = bindings.c;
+const Sdl = bindings.Sdl;
 const Gl = bindings.Gl;
 
+const Precision = @import("../console.zig").Precision;
 const Context = @import("context.zig").Context;
 
-// currently using old style opengl for compatability
-// not that I understand opengl
+pub fn BasicContext(comptime precision: Precision) type {
+    return struct {
+        const Self = @This();
 
-pub const BasicContext = struct {
-    pixel_buffer: PixelBuffer,
+        pixel_buffer: PixelBuffer,
 
-    pub fn init(parent_context: *Context(false)) !BasicContext {
-        try Gl.viewport(.{ 0, 0, 256 * 3, 240 * 3 });
-        try Gl.enable(.{c.GL_TEXTURE_2D});
+        pub fn init(parent_context: *Context(precision, false)) !Self {
+            try Gl.viewport(.{ 0, 0, 256 * 3, 240 * 3 });
+            try Gl.enable(.{c.GL_TEXTURE_2D});
 
-        try Gl.matrixMode(.{c.GL_PROJECTION});
-        try Gl.loadIdentity();
+            try Gl.matrixMode(.{c.GL_PROJECTION});
+            try Gl.loadIdentity();
 
-        var self = BasicContext{
-            .pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
-        };
+            var self = Self{
+                .pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
+            };
 
-        self.pixel_buffer.scale = 3;
+            self.pixel_buffer.scale = 3;
 
-        return self;
-    }
-
-    pub fn deinit(self: BasicContext, allocator: *Allocator) void {
-        self.pixel_buffer.deinit(allocator);
-    }
-
-    pub fn getGamePixelBuffer(self: *BasicContext) *PixelBuffer {
-        return &self.pixel_buffer;
-    }
-
-    pub fn handleEvent(_: *BasicContext, event: c.SDL_Event) bool {
-        switch (event.type) {
-            c.SDL_KEYUP => switch (event.key.keysym.sym) {
-                c.SDLK_q => return false,
-                else => {},
-            },
-            c.SDL_QUIT => return false,
-            else => {},
+            return self;
         }
-        return true;
-    }
 
-    pub fn draw(self: BasicContext) !void {
-        try Gl.pushClientAttrib(.{c.GL_CLIENT_ALL_ATTRIB_BITS});
-        try Gl.pushMatrix();
+        pub fn deinit(self: Self, allocator: *Allocator) void {
+            self.pixel_buffer.deinit(allocator);
+        }
 
-        try Gl.enableClientState(.{c.GL_VERTEX_ARRAY});
-        try Gl.enableClientState(.{c.GL_TEXTURE_COORD_ARRAY});
+        pub fn getGamePixelBuffer(self: *Self) *PixelBuffer {
+            return &self.pixel_buffer;
+        }
 
-        try Gl.loadIdentity();
-        try Gl.ortho(.{ 0, 256 * 3, 240 * 3, 0, 0, 1 });
+        pub fn mainLoop(self: *Self) !void {
+            var parent_context = @fieldParentPtr(Context(precision, false), "extension_context", self);
+            const console = &parent_context.console;
+            var event: c.SDL_Event = undefined;
 
-        try self.pixel_buffer.drawRaw();
+            console.controller.read_input = true;
 
-        try Gl.bindTexture(.{ c.GL_TEXTURE_2D, 0 });
+            var total_time: i128 = 0;
+            var frames: usize = 0;
+            mloop: while (true) {
+                while (Sdl.pollEvent(.{&event}) == 1) {
+                    switch (event.type) {
+                        c.SDL_KEYUP => switch (event.key.keysym.sym) {
+                            c.SDLK_q => break :mloop,
+                            else => {},
+                        },
+                        c.SDL_QUIT => break :mloop,
+                        else => {},
+                    }
+                }
 
-        try Gl.disableClientState(.{c.GL_VERTEX_ARRAY});
-        try Gl.disableClientState(.{c.GL_TEXTURE_COORD_ARRAY});
+                if (console.ppu.present_frame) {
+                    frames += 1;
+                    console.ppu.present_frame = false;
+                    total_time += try parent_context.draw(.{ .timing = .timed });
 
-        try Gl.popMatrix();
-        try Gl.popClientAttrib();
-    }
-};
+                    if (total_time > std.time.ns_per_s) {
+                        //std.debug.print("FPS: {}\n", .{frames});
+                        frames = 0;
+                        total_time -= std.time.ns_per_s;
+                    }
+                    if (frames > 4) {
+                        parent_context.audio_context.unpause();
+                    }
+                }
+
+                // Batch run instructions/cycles to not get bogged down by Sdl.pollEvent
+                if (console.cart.rom_loaded) {
+                    const cpu = &console.cpu;
+                    var i: usize = 0;
+                    switch (@import("build_options").precision) {
+                        .fast => {
+                            while (i < 2000) : (i += 1) {
+                                cpu.runStep();
+                            }
+                        },
+                        .accurate => {
+                            while (i < 5000) : (i += 1) {
+                                cpu.runStep();
+                            }
+                        },
+                    }
+                }
+            }
+        }
+
+        pub fn draw(self: Self) !void {
+            try Gl.pushClientAttrib(.{c.GL_CLIENT_ALL_ATTRIB_BITS});
+            try Gl.pushMatrix();
+
+            try Gl.enableClientState(.{c.GL_VERTEX_ARRAY});
+            try Gl.enableClientState(.{c.GL_TEXTURE_COORD_ARRAY});
+
+            try Gl.loadIdentity();
+            try Gl.ortho(.{ 0, 256 * 3, 240 * 3, 0, 0, 1 });
+
+            try self.pixel_buffer.drawRaw();
+
+            try Gl.bindTexture(.{ c.GL_TEXTURE_2D, 0 });
+
+            try Gl.disableClientState(.{c.GL_VERTEX_ARRAY});
+            try Gl.disableClientState(.{c.GL_TEXTURE_COORD_ARRAY});
+
+            try Gl.popMatrix();
+            try Gl.popClientAttrib();
+        }
+    };
+}
 
 pub const PixelBuffer = struct {
     pixels: []u32 = null,

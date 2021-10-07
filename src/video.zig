@@ -9,14 +9,6 @@ pub const VideoMethod = enum {
     sdl_imgui,
 };
 
-pub fn Context(comptime method: VideoMethod) type {
-    switch (method) {
-        .pure => return PureContext,
-        .sdl_basic => return @import("sdl/context.zig").Context(false),
-        .sdl_imgui => return @import("sdl/context.zig").Context(true),
-    }
-}
-
 pub fn PixelBuffer(comptime method: IoMethod) type {
     switch (method) {
         .pure => return PureContext.Pb,

@@ -20,6 +20,8 @@ const HexEditor = @import("imgui/hex_editor.zig").HexEditor;
 pub const ImguiContext = struct {
     console: *Console(.{ .precision = .accurate, .method = .sdl }),
     windows: HashMap(Window),
+
+    paused: bool = false,
     quit: bool = false,
 
     game_pixel_buffer: PixelBuffer,
@@ -29,8 +31,7 @@ pub const ImguiContext = struct {
     };
 
     pub fn init(
-        parent_context: *Context(true),
-        console: *Console(.{ .precision = .accurate, .method = .sdl }),
+        parent_context: *Context(.accurate, true),
     ) !ImguiContext {
         Sdl.setWindowSize(.{ parent_context.window, 1920, 1080 });
         Sdl.setWindowPosition(.{ parent_context.window, c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED });
@@ -42,7 +43,7 @@ pub const ImguiContext = struct {
         Imgui.styleColorsDark(.{null});
 
         var self = ImguiContext{
-            .console = console,
+            .console = &parent_context.console,
             .windows = HashMap(Window).init(parent_context.allocator),
 
             .game_pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
@@ -115,21 +116,65 @@ pub const ImguiContext = struct {
         std.log.debug("Added window: {s}", .{window.title});
     }
 
-    pub fn getParentContext(self: *ImguiContext) *Context(true) {
-        return @fieldParentPtr(Context(true), "extension_context", self);
+    pub fn getParentContext(self: *ImguiContext) *Context(.accurate, true) {
+        return @fieldParentPtr(Context(.accurate, true), "extension_context", self);
     }
 
     pub fn getGamePixelBuffer(self: *ImguiContext) *PixelBuffer {
         return &self.game_pixel_buffer;
     }
 
-    pub fn handleEvent(self: *ImguiContext, event: c.SDL_Event) bool {
-        _ = Imgui.sdl2ProcessEvent(.{&event});
-        switch (event.type) {
-            c.SDL_QUIT => return false,
-            else => {},
+    pub fn mainLoop(self: *ImguiContext) !void {
+        var parent_context = self.getParentContext();
+        var event: c.SDL_Event = undefined;
+
+        var total_time: i128 = 0;
+        var frames: usize = 0;
+        mloop: while (!self.quit) {
+            while (Sdl.pollEvent(.{&event}) == 1) {
+                _ = Imgui.sdl2ProcessEvent(.{&event});
+                switch (event.type) {
+                    c.SDL_QUIT => break :mloop,
+                    else => {},
+                }
+            }
+
+            if (self.console.ppu.present_frame) {
+                frames += 1;
+                self.console.ppu.present_frame = false;
+                total_time += try parent_context.draw(.{ .timing = .timed });
+
+                if (total_time > std.time.ns_per_s) {
+                    //std.debug.print("FPS: {}\n", .{frames});
+                    frames = 0;
+                    total_time -= std.time.ns_per_s;
+                }
+                if (frames > 4) {
+                    parent_context.audio_context.unpause();
+                }
+            } else if (self.paused) {
+                _ = try parent_context.draw(.{ .timing = .timed });
+                continue;
+            }
+
+            // Batch run instructions/cycles to not get bogged down by Sdl.pollEvent
+            if (self.console.cart.rom_loaded) {
+                const cpu = &self.console.cpu;
+                var i: usize = 0;
+                switch (@import("build_options").precision) {
+                    .fast => {
+                        while (i < 2000) : (i += 1) {
+                            cpu.runStep();
+                        }
+                    },
+                    .accurate => {
+                        while (i < 5000) : (i += 1) {
+                            cpu.runStep();
+                        }
+                    },
+                }
+            }
         }
-        return !self.quit;
     }
 
     pub fn draw(self: *ImguiContext) !void {

@@ -2,24 +2,62 @@ const std = @import("std");
 const time = std.time;
 const Allocator = std.mem.Allocator;
 
+const build_options = @import("build_options");
+
 const bindings = @import("bindings.zig");
 const c = bindings.c;
 const Sdl = bindings.Sdl;
 const Gl = bindings.Gl;
 
+const Console = @import("../console.zig").Console;
+const Precision = @import("../console.zig").Precision;
+
+const audio = @import("audio.zig");
 const BasicContext = @import("basic_video.zig").BasicContext;
 const PixelBuffer = @import("basic_video.zig").PixelBuffer;
 const ImguiContext = @import("imgui.zig").ImguiContext;
 
-pub fn Context(comptime using_imgui: bool) type {
-    const ExtensionContext = if (using_imgui) ImguiContext else BasicContext;
+pub fn runImpl() anyerror!void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.detectLeaks();
+
+    var allocator = &gpa.allocator;
+
+    try Sdl.init(.{c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO | c.SDL_INIT_EVENTS});
+    defer Sdl.quit();
+
+    var context = Context(
+        comptime std.meta.stringToEnum(Precision, @tagName(build_options.precision)).?,
+        build_options.imgui,
+    ).pin();
+    try context.init(allocator);
+    defer context.deinit();
+
+    var args_iter = std.process.args();
+    _ = args_iter.skip();
+
+    if (args_iter.next(allocator)) |arg| {
+        const path = try arg;
+        defer allocator.free(path);
+        try context.console.loadRom(path);
+    }
+
+    try context.mainLoop();
+}
+
+pub fn Context(comptime precision: Precision, comptime using_imgui: bool) type {
+    const ExtensionContext = if (using_imgui) ImguiContext else BasicContext(precision);
     return struct {
         const Self = @This();
 
         allocator: *Allocator,
+
         window: *Sdl.Window,
         gl_context: Sdl.GLContext,
+        audio_context: audio.Context,
         extension_context: ExtensionContext,
+
+        console: Console(.{ .precision = precision, .method = .sdl }),
 
         last_frame_time: i128,
         next_frame_time: i128,
@@ -33,16 +71,31 @@ pub fn Context(comptime using_imgui: bool) type {
             frametime: f32 = (4 * (261 * 341 + 340.5)) / 21477272.0,
         };
 
-        pub fn init(allocator: *Allocator, console: anytype, title: [:0]const u8) !Self {
-            const window = try Sdl.createWindow(.{
-                title,
+        pub fn pin() Self {
+            return Self{
+                .allocator = undefined,
+
+                .console = undefined,
+                .window = undefined,
+                .gl_context = undefined,
+                .audio_context = undefined,
+                .extension_context = undefined,
+
+                .last_frame_time = undefined,
+                .next_frame_time = undefined,
+            };
+        }
+
+        pub fn init(self: *Self, allocator: *Allocator) !void {
+            self.allocator = allocator;
+            self.window = try Sdl.createWindow(.{
+                "Badnes",
                 c.SDL_WINDOWPOS_CENTERED,
                 c.SDL_WINDOWPOS_CENTERED,
                 256 * 3,
                 240 * 3,
                 c.SDL_WINDOW_OPENGL,
             });
-            errdefer Sdl.destroyWindow(.{window});
 
             try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_MAJOR_VERSION, 3 });
             try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_MINOR_VERSION, 0 });
@@ -52,36 +105,25 @@ pub fn Context(comptime using_imgui: bool) type {
             try Sdl.glSetAttribute(.{ c.SDL_GL_DOUBLEBUFFER, 1 });
             try Sdl.glSetAttribute(.{ c.SDL_GL_DEPTH_SIZE, 0 });
 
-            const gl_context = try Sdl.glCreateContext(.{window});
-            errdefer Sdl.glDeleteContext(.{gl_context});
-            try Sdl.glMakeCurrent(.{ window, gl_context });
+            self.gl_context = try Sdl.glCreateContext(.{self.window});
+            try Sdl.glMakeCurrent(.{ self.window, self.gl_context });
             try Sdl.glSetSwapInterval(.{0});
 
-            var self = Self{
-                .allocator = allocator,
-                .window = window,
-                .gl_context = gl_context,
-                .extension_context = undefined,
+            self.audio_context = try audio.Context.alloc(allocator);
+            try self.audio_context.init();
+            self.console.init(allocator, self.getGamePixelBuffer(), &self.audio_context);
 
-                .last_frame_time = undefined,
-                .next_frame_time = undefined,
-            };
+            self.extension_context = try ExtensionContext.init(self);
 
-            const extension_context = try if (using_imgui)
-                ExtensionContext.init(&self, console)
-            else
-                ExtensionContext.init(&self);
             const now = time.nanoTimestamp();
-
-            self.extension_context = extension_context;
             self.last_frame_time = now;
             self.next_frame_time = now;
-
-            return self;
         }
 
-        pub fn deinit(self: *Self, allocator: *Allocator) void {
-            self.extension_context.deinit(allocator);
+        pub fn deinit(self: *Self) void {
+            self.extension_context.deinit(self.allocator);
+            self.audio_context.deinit(self.allocator);
+            self.console.deinit();
 
             Sdl.glDeleteContext(.{self.gl_context});
             Sdl.destroyWindow(.{self.window});
@@ -91,8 +133,8 @@ pub fn Context(comptime using_imgui: bool) type {
             return self.extension_context.getGamePixelBuffer();
         }
 
-        pub inline fn handleEvent(self: *Self, event: c.SDL_Event) bool {
-            return self.extension_context.handleEvent(event);
+        pub inline fn mainLoop(self: *Self) !void {
+            return self.extension_context.mainLoop();
         }
 
         pub fn draw(self: *Self, draw_options: DrawOptions) !i128 {

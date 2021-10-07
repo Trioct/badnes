@@ -16,7 +16,7 @@ fn testRom(
     expect_addr: u16,
     expect_val: u8,
 ) !void {
-    var video_context = try video.Context(.pure).init(testing.allocator);
+    var video_context = try video.PureContext.init(testing.allocator);
     defer video_context.deinit(testing.allocator);
 
     var audio_context = try audio.Context(.pure).init(testing.allocator);
