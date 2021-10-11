@@ -62,6 +62,7 @@ pub const FileDialog = struct {
                         context.console.clearState();
                         context.console.loadRom(path) catch |err| {
                             std.log.err("{}", .{err});
+                            try context.pause();
                         };
                         try context.unpause();
                         return false;

@@ -28,6 +28,9 @@ pub const ImguiContext = struct {
     game_pixel_buffer: PixelBuffer,
     frame_timer: util.FrameTimer,
 
+    // for my testing pleasure before input configuration
+    temp_controller: ?*c.SDL_GameController,
+
     const FileDialogReason = enum {
         open_rom,
     };
@@ -50,8 +53,12 @@ pub const ImguiContext = struct {
 
             .game_pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
             .frame_timer = util.FrameTimer.init(null),
+
+            .temp_controller = Sdl.gameControllerOpen(.{0}),
         };
         try self.pause();
+
+        parent_context.console.controller.sdl_controller = self.temp_controller;
 
         self.game_pixel_buffer.scale = 3;
 
@@ -75,6 +82,8 @@ pub const ImguiContext = struct {
         }
         self.windows.deinit();
         self.game_pixel_buffer.deinit(allocator);
+
+        Sdl.gameControllerClose(.{self.temp_controller});
 
         Imgui.opengl3Shutdown();
         Imgui.sdl2Shutdown();

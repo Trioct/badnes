@@ -86,8 +86,11 @@ pub fn Console(comptime config: Config) type {
         }
 
         pub fn clearState(self: *Self) void {
+            // TODO: bad
+            const temp_controller = self.controller.sdl_controller;
             self.deinit();
             self.init(self.allocator, self.pixel_buffer, self.audio_context);
+            self.controller.sdl_controller = temp_controller;
         }
     };
 }

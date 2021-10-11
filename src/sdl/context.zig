@@ -22,7 +22,7 @@ pub fn runImpl() anyerror!void {
 
     var allocator = &gpa.allocator;
 
-    try Sdl.init(.{c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO | c.SDL_INIT_EVENTS});
+    try Sdl.init(.{c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO | c.SDL_INIT_GAMECONTROLLER | c.SDL_INIT_EVENTS});
     defer Sdl.quit();
 
     var context = Context(

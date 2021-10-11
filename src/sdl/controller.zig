@@ -11,6 +11,8 @@ pub const Controller = struct {
     shift: u4 = 0,
     read_input: bool = false,
 
+    sdl_controller: ?*bindings.c.SDL_GameController = null,
+
     const ff_masks = CreateFlags(Controller, ([_]FieldFlagsDef{
         .{ .field = "buttons", .flags = "RLDUSsBA" },
     })[0..]){};
@@ -52,6 +54,40 @@ pub const Controller = struct {
         }
         if (keys[bindings.c.SDL_SCANCODE_X] != 0) {
             self.setButton("A");
+        }
+
+        // TODO: sdl controller stuff is all my personal buttons, remove
+        if (self.sdl_controller) |c| {
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_DPAD_RIGHT }) != 0) {
+                self.setButton("R");
+            }
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_DPAD_LEFT }) != 0) {
+                self.setButton("L");
+            }
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_DPAD_DOWN }) != 0) {
+                self.setButton("D");
+            }
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_DPAD_UP }) != 0) {
+                self.setButton("U");
+            }
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_START }) != 0) {
+                self.setButton("S");
+            }
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_BACK }) != 0) {
+                self.setButton("s");
+            }
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_Y }) != 0) {
+                self.setButton("B");
+            }
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_A }) != 0) {
+                self.setButton("B");
+            }
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_X }) != 0) {
+                self.setButton("A");
+            }
+            if (Sdl.gameControllerGetButton(.{ c, bindings.c.SDL_CONTROLLER_BUTTON_B }) != 0) {
+                self.setButton("A");
+            }
         }
     }
 

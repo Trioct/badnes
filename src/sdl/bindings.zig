@@ -40,6 +40,11 @@ pub const Sdl = struct {
     pub const getKeyboardState = wrap(c.SDL_GetKeyboardState, .{ .sdl = .{
         .many_ptr_to_single = false,
     } });
+    pub const gameControllerOpen = wrap(c.SDL_GameControllerOpen, .{ .sdl = .{
+        .optional_to_error = false,
+    } });
+    pub const gameControllerClose = wrap(c.SDL_GameControllerClose, empty_options);
+    pub const gameControllerGetButton = wrap(c.SDL_GameControllerGetButton, .{ .sdl = .{ .int = .int_to_zig } });
 
     pub const openAudioDevice = wrap(c.SDL_OpenAudioDevice, .{ .sdl = .{ .int = null } });
     pub const closeAudioDevice = wrap(c.SDL_CloseAudioDevice, empty_options);
