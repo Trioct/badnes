@@ -86,6 +86,8 @@ pub const Imgui = struct {
     const empty_options = .{ .imgui = .{} };
     const bool_err = .{ .imgui = .{ .bool_to_error = true } };
 
+    pub const Vec2 = c.ImVec2;
+
     pub const createContext = wrap(c.igCreateContext, empty_options);
     pub const sdl2InitForOpengl = wrap(c.ImGui_ImplSDL2_InitForOpenGL, bool_err);
     pub const opengl3Init = wrap(c.ImGui_ImplOpenGL3_Init, bool_err);
@@ -106,9 +108,27 @@ pub const Imgui = struct {
     pub const getDrawData = wrap(c.igGetDrawData, empty_options);
 
     pub const isWindowFocused = wrap(c.igIsWindowFocused, empty_options);
+    pub const isMouseClicked = wrap(c.igIsMouseClicked, empty_options);
     pub const findWindowByName = wrap(c.igFindWindowByName, .{ .imgui = .{ .optional_to_error = false } });
     pub const setNextWindowSize = wrap(c.igSetNextWindowSize, empty_options);
     pub const setNextWindowContentSize = wrap(c.igSetNextWindowContentSize, empty_options);
+
+    pub const isItemHovered = wrap(c.igIsItemHovered, empty_options);
+    pub const isItemFocused = wrap(c.igIsItemFocused, empty_options);
+    pub const isItemClicked = wrap(c.igIsItemClicked, empty_options);
+    pub const setNextItemWidth = wrap(c.igSetNextItemWidth, empty_options);
+
+    pub const getCursorPos = wrap(c.igGetCursorPos, empty_options);
+    pub const getCursorScreenPos = wrap(c.igGetCursorScreenPos, empty_options);
+
+    pub const pushStyleVarVec2 = wrap(c.igPushStyleVar_Vec2, empty_options);
+    pub const popStyleVar = wrap(c.igPopStyleVar, empty_options);
+
+    pub const getWindowDrawList = wrap(c.igGetWindowDrawList, empty_options);
+    pub const addRectFilled = wrap(c.ImDrawList_AddRectFilled, empty_options);
+
+    pub const getTextLineHeight = wrap(c.igGetTextLineHeight, empty_options);
+    pub const calcTextSize = wrap(c.igCalcTextSize, empty_options);
 
     pub const begin = wrap(c.igBegin, empty_options);
     pub const end = wrap(c.igEnd, empty_options);
@@ -116,6 +136,9 @@ pub const Imgui = struct {
     pub const endChild = wrap(c.igEndChild, empty_options);
     pub const sameLine = wrap(c.igSameLine, empty_options);
     pub const newLine = wrap(c.igNewLine, empty_options);
+
+    pub const pushIdInt = wrap(c.igPushID_Int, empty_options);
+    pub const popId = wrap(c.igPopID, empty_options);
 
     pub const beginPopup = wrap(c.igBeginPopup, empty_options);
     pub const beginPopupModal = wrap(c.igBeginPopupModal, empty_options);
@@ -141,9 +164,11 @@ pub const Imgui = struct {
             c.igTextUnformatted(&str[0], &str[str.len]);
         }
     }
+    pub const inputText = wrap(c.igInputText, empty_options);
     pub const button = wrap(c.igButton, empty_options);
     pub const image = wrap(c.igImage, empty_options);
 
+    // TODO: see about turning flags into a packed struct
     pub const windowFlagsNone = c.ImGuiWindowFlags_None;
     pub const windowFlagsNoTitleBar = c.ImGuiWindowFlags_NoTitleBar;
     pub const windowFlagsNoResize = c.ImGuiWindowFlags_NoResize;
@@ -168,6 +193,28 @@ pub const Imgui = struct {
     pub const windowFlagsNoNav = c.ImGuiWindowFlags_NoNavInputs | c.ImGuiWindowFlags_NoNavFocus;
     pub const windowFlagsNoDecoration = c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoScrollbar | c.ImGuiWindowFlags_NoCollapse;
     pub const windowFlagsNoInputs = c.ImGuiWindowFlags_NoMouseInputs | c.ImGuiWindowFlags_NoNavInputs | c.ImGuiWindowFlags_NoNavFocus;
+
+    pub const inputTextFlagsNone = c.ImGuiInputTextFlags_None;
+    pub const inputTextFlagsCharsDecimal = c.ImGuiInputTextFlags_CharsDecimal;
+    pub const inputTextFlagsCharsHexadecimal = c.ImGuiInputTextFlags_CharsHexadecimal;
+    pub const inputTextFlagsCharsUppercase = c.ImGuiInputTextFlags_CharsUppercase;
+    pub const inputTextFlagsCharsNoBlank = c.ImGuiInputTextFlags_CharsNoBlank;
+    pub const inputTextFlagsAutoSelectAll = c.ImGuiInputTextFlags_AutoSelectAll;
+    pub const inputTextFlagsEnterReturnsTrue = c.ImGuiInputTextFlags_EnterReturnsTrue;
+    pub const inputTextFlagsCallbackCompletion = c.ImGuiInputTextFlags_CallbackCompletion;
+    pub const inputTextFlagsCallbackHistory = c.ImGuiInputTextFlags_CallbackHistory;
+    pub const inputTextFlagsCallbackAlways = c.ImGuiInputTextFlags_CallbackAlways;
+    pub const inputTextFlagsCallbackCharFilter = c.ImGuiInputTextFlags_CallbackCharFilter;
+    pub const inputTextFlagsAllowTabInput = c.ImGuiInputTextFlags_AllowTabInput;
+    pub const inputTextFlagsCtrlEnterForNewLine = c.ImGuiInputTextFlags_CtrlEnterForNewLine;
+    pub const inputTextFlagsNoHorizontalScroll = c.ImGuiInputTextFlags_NoHorizontalScroll;
+    pub const inputTextFlagsAlwaysOverwrite = c.ImGuiInputTextFlags_AlwaysOverwrite;
+    pub const inputTextFlagsReadOnly = c.ImGuiInputTextFlags_ReadOnly;
+    pub const inputTextFlagsPassword = c.ImGuiInputTextFlags_Password;
+    pub const inputTextFlagsNoUndoRedo = c.ImGuiInputTextFlags_NoUndoRedo;
+    pub const inputTextFlagsCharsScientific = c.ImGuiInputTextFlags_CharsScientific;
+    pub const inputTextFlagsCallbackResize = c.ImGuiInputTextFlags_CallbackResize;
+    pub const inputTextFlagsCallbackEdit = c.ImGuiInputTextFlags_CallbackEdit;
 };
 
 pub const CError = error{

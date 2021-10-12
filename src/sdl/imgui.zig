@@ -167,6 +167,10 @@ pub const ImguiContext = struct {
         }
     }
 
+    pub fn isConsoleRunning(self: ImguiContext) bool {
+        return !self.paused and self.console.cart.rom_loaded;
+    }
+
     pub fn mainLoop(self: *ImguiContext) !void {
         var parent_context = self.getParentContext();
         var event: c.SDL_Event = undefined;
@@ -188,7 +192,7 @@ pub const ImguiContext = struct {
                 }
             }
 
-            if (self.paused or !self.console.cart.rom_loaded) {
+            if (!self.isConsoleRunning()) {
                 try self.draw();
                 continue;
             }
@@ -352,7 +356,7 @@ const WindowImpl = union(enum) {
         switch (self.*) {
             .game_window => |x| return x.draw(context.*),
             .file_dialog => |*x| return x.draw(context),
-            .hex_editor => |*x| return x.draw(context.*),
+            .hex_editor => |*x| return x.draw(context),
         }
     }
 

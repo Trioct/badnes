@@ -821,6 +821,13 @@ pub fn Memory(comptime config: Config) type {
             return self.open_bus;
         }
 
+        pub fn sneak(self: *Self, addr: u16, val: u8) void {
+            switch (addr) {
+                0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
+                else => {},
+            }
+        }
+
         pub fn write(self: *Self, addr: u16, val: u8) void {
             self.open_bus = val;
             switch (addr) {

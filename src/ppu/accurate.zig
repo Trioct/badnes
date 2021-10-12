@@ -616,6 +616,17 @@ pub fn Memory(comptime config: Config) type {
             };
         }
 
+        pub fn sneak(self: *Self, addr: u14, val: u8) void {
+            switch (addr) {
+                0x0000...0x1fff => {},
+                0x2000...0x3eff => self.nametables[self.cart.mirrorNametable(addr)] = val,
+                0x3f00...0x3fff => if (addr & 3 == 0) {
+                    self.palettes[addr & 0x0c] = val;
+                } else {
+                    self.palettes[addr & 0x1f] = val;
+                },
+            }
+        }
         pub fn write(self: *Self, addr: u14, val: u8) void {
             self.address_bus = addr;
             switch (addr) {
