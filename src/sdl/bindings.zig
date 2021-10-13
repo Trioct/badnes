@@ -95,10 +95,7 @@ pub const Imgui = struct {
     pub const sdl2Shutdown = wrap(c.ImGui_ImplSDL2_Shutdown, empty_options);
     pub const opengl3Shutdown = wrap(c.ImGui_ImplOpenGL3_Shutdown, empty_options);
 
-    pub const styleColorsDark = wrap(c.igStyleColorsDark, empty_options);
-
     pub const sdl2ProcessEvent = wrap(c.ImGui_ImplSDL2_ProcessEvent, empty_options);
-
     pub const opengl3NewFrame = wrap(c.ImGui_ImplOpenGL3_NewFrame, empty_options);
     pub const sdl2NewFrame = wrap(c.ImGui_ImplSDL2_NewFrame, empty_options);
     pub const newFrame = wrap(c.igNewFrame, empty_options);
@@ -107,16 +104,22 @@ pub const Imgui = struct {
     pub const opengl3RenderDrawData = wrap(c.ImGui_ImplOpenGL3_RenderDrawData, empty_options);
     pub const getDrawData = wrap(c.igGetDrawData, empty_options);
 
+    pub const getStyle = wrap(c.igGetStyle, empty_options);
+    pub const styleColorsDark = wrap(c.igStyleColorsDark, empty_options);
+
     pub const isWindowFocused = wrap(c.igIsWindowFocused, empty_options);
     pub const isMouseClicked = wrap(c.igIsMouseClicked, empty_options);
+    pub const isMouseReleased = wrap(c.igIsMouseReleased, empty_options);
     pub const findWindowByName = wrap(c.igFindWindowByName, .{ .imgui = .{ .optional_to_error = false } });
     pub const setNextWindowSize = wrap(c.igSetNextWindowSize, empty_options);
+    pub const setNextWindowSizeConstraints = wrap(c.igSetNextWindowSizeConstraints, empty_options);
     pub const setNextWindowContentSize = wrap(c.igSetNextWindowContentSize, empty_options);
 
     pub const isItemHovered = wrap(c.igIsItemHovered, empty_options);
     pub const isItemFocused = wrap(c.igIsItemFocused, empty_options);
     pub const isItemClicked = wrap(c.igIsItemClicked, empty_options);
     pub const setNextItemWidth = wrap(c.igSetNextItemWidth, empty_options);
+    pub const setKeyboardFocusHere = wrap(c.igSetKeyboardFocusHere, empty_options);
 
     pub const getCursorPos = wrap(c.igGetCursorPos, empty_options);
     pub const getCursorScreenPos = wrap(c.igGetCursorScreenPos, empty_options);
@@ -167,6 +170,11 @@ pub const Imgui = struct {
     pub const inputText = wrap(c.igInputText, empty_options);
     pub const button = wrap(c.igButton, empty_options);
     pub const image = wrap(c.igImage, empty_options);
+
+    pub const listClipperInit = wrap(c.ImGuiListClipper_ImGuiListClipper, empty_options);
+    pub const listClipperDeinit = wrap(c.ImGuiListClipper_destroy, empty_options);
+    pub const listClipperBegin = wrap(c.ImGuiListClipper_Begin, empty_options);
+    pub const listClipperStep = wrap(c.ImGuiListClipper_Step, empty_options);
 
     // TODO: see about turning flags into a packed struct
     pub const windowFlagsNone = c.ImGuiWindowFlags_None;

@@ -72,7 +72,7 @@ pub fn BasicContext(comptime precision: Precision) type {
                     frames += 1;
                     console.ppu.present_frame = false;
                     try self.draw();
-                    total_time += self.frame_timer.waitUntilNext();
+                    total_time += self.frame_timer.waitUntilNext(250 * std.time.ns_per_ms);
 
                     if (total_time > std.time.ns_per_s) {
                         //std.debug.print("FPS: {}\n", .{frames});

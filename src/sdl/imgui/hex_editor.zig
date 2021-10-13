@@ -11,11 +11,19 @@ const ImguiContext = @import("../imgui.zig").ImguiContext;
 const util = @import("util.zig");
 
 pub const HexEditor = struct {
-    address_space: AddressSpace = .ppu,
-    value_strs: util.StringBuilder,
+    layout: Layout = Layout{
+        .address_digits = 4,
+        .extra_spacing_every_8 = 1,
+        .bytes_per_line = 16,
 
-    layout: Layout = Layout{},
+        .digit_size = .{
+            .x = 0,
+            .y = 0,
+        },
+        .window_width = 0,
+    },
 
+    address_space: AddressSpace = .cpu,
     cell_selection: ?CellSelection = null,
 
     const CellSelection = struct {
@@ -27,42 +35,68 @@ pub const HexEditor = struct {
     const AddressSpace = enum {
         cpu,
         ppu,
+        oam,
     };
 
-    pub fn init(allocator: *Allocator) HexEditor {
-        return HexEditor{
-            .value_strs = util.StringBuilder.init(allocator),
-        };
+    pub fn init() HexEditor {
+        return HexEditor{};
     }
 
-    pub fn deinit(self: HexEditor) void {
-        self.value_strs.deinit();
-    }
-
-    pub fn draw(self: *HexEditor, context: *ImguiContext) !bool {
-        // TODO: add update rate limiter
-        if (context.isConsoleRunning()) {
-            self.updateValues(context.*) catch |err| {
-                std.log.err("{}", .{err});
-                return false;
-            };
-        }
-
-        const value_strs = self.value_strs.buffer.items;
-        if (value_strs.len == 0) {
-            return true;
-        }
-
-        const draw_list = try Imgui.getWindowDrawList();
-
-        const digit_size = blk: {
+    pub fn predraw(self: *HexEditor) !void {
+        self.layout.digit_size = blk: {
             var temp: Imgui.Vec2 = undefined;
             Imgui.calcTextSize(.{ &temp, "0", null, false, -1 });
             break :blk temp;
         };
 
+        const style = try Imgui.getStyle();
+
+        const address_width = @intToFloat(f32, self.layout.address_digits) * self.layout.digit_size.x;
+        const bytes_width = @intToFloat(f32, self.layout.bytes_per_line) * self.layout.digit_size.x * 3;
+        const spacing_width = @intToFloat(f32, self.layout.extra_spacing_every_8) * self.layout.digit_size.x;
+        const decoration_width = style.ScrollbarSize + style.WindowPadding.x * 2;
+        self.layout.window_width = address_width +
+            @intToFloat(f32, ": ".len) +
+            bytes_width +
+            @intToFloat(f32, @divTrunc(self.layout.bytes_per_line, 8)) * spacing_width +
+            decoration_width;
+
+        const this_avoids_a_miscompile = .{ .x = self.layout.window_width, .y = std.math.f32_max };
+        Imgui.setNextWindowSizeConstraints(.{ .{ .x = 0, .y = 0 }, this_avoids_a_miscompile, null, null });
+    }
+
+    pub fn draw(self: *HexEditor, context: *ImguiContext) !bool {
+        if (Imgui.beginMenuBar()) {
+            defer Imgui.endMenuBar();
+
+            if (Imgui.beginMenu(.{ "Memory", true })) {
+                defer Imgui.endMenu();
+
+                inline for (.{
+                    .{ .label = "CPU", .address_space = .cpu },
+                    .{ .label = "PPU", .address_space = .ppu },
+                    .{ .label = "OAM", .address_space = .oam },
+                }) |item_info| {
+                    if (Imgui.menuItem(.{
+                        item_info.label,
+                        null,
+                        self.address_space == item_info.address_space,
+                        true,
+                    })) {
+                        self.address_space = item_info.address_space;
+                    }
+                }
+            }
+        }
+
+        if (!context.console.cart.rom_loaded) {
+            return true;
+        }
+
+        const draw_list = try Imgui.getWindowDrawList();
+
         // TODO: make/search for issue
-        const this_avoids_a_miscompile = .{ .x = digit_size.x, .y = 0 };
+        const this_avoids_a_miscompile = .{ .x = self.layout.digit_size.x, .y = 0 };
         Imgui.pushStyleVarVec2(.{ c.ImGuiStyleVar_FramePadding, .{ .x = 0, .y = 0 } });
         Imgui.pushStyleVarVec2(.{ c.ImGuiStyleVar_ItemSpacing, this_avoids_a_miscompile });
         defer Imgui.popStyleVar(.{2});
@@ -71,86 +105,133 @@ pub const HexEditor = struct {
             self.cell_selection = null;
         }
 
-        const chunked_values = @ptrCast([*]([2:0]u8), value_strs)[0..@divExact(value_strs.len, 3)];
-        for (chunked_values) |*str, i| {
-            const is_selected = if (self.cell_selection != null) i == self.cell_selection.?.index else false;
+        // TODO: StringBuilder/std.fmt.format are slow, consider custom toHex function
+        // considering formatting will occur a lot here
+        var str = util.StringBuilder.init(context.getParentContext().allocator);
+        defer str.deinit();
 
-            if (is_selected) {
-                const cursor_pos = blk: {
-                    var temp: Imgui.Vec2 = undefined;
-                    Imgui.getCursorScreenPos(.{&temp});
-                    break :blk temp;
-                };
+        var clipper = try Imgui.listClipperInit();
+        defer Imgui.listClipperDeinit(.{clipper});
 
-                // TODO: using the wrapped function causes a compiler bug
-                // https://github.com/ziglang/zig/issues/6446
-                //Imgui.addRectFilled(.{
-                c.ImDrawList_AddRectFilled(
-                    draw_list,
-                    cursor_pos,
-                    .{ .x = cursor_pos.x + digit_size.x * 2, .y = cursor_pos.y + digit_size.y },
-                    0xffd05050,
-                    0,
-                    0,
-                );
-            }
+        Imgui.listClipperBegin(.{ clipper, @intCast(c_int, self.getMaxAddr() / 16), self.layout.digit_size.y });
 
-            if (is_selected and self.cell_selection != null and self.cell_selection.?.editing) {
-                const selection = &self.cell_selection.?;
-                Imgui.setNextItemWidth(.{digit_size.x * 2});
-
-                const was_just_selected = selection.just_selected;
-                // TODO: why does the mouse getting released unfocus the inputText?
-                if (selection.just_selected or (Imgui.isWindowFocused(.{0}) and c.igIsMouseReleased(0))) {
-                    c.igSetKeyboardFocusHere(0);
-                    selection.just_selected = false;
+        while (Imgui.listClipperStep(.{clipper})) {
+            var i = @intCast(usize, clipper.DisplayStart * 16);
+            while (i < clipper.DisplayEnd * 16) : (i += 1) {
+                if (i & 15 == 0) {
+                    str.reset();
+                    _ = try std.fmt.format(str.writer(), "{x:0>4}: \x00", .{i});
+                    Imgui.text(str.getSliceNull());
+                    Imgui.sameLine(.{ 0, -1 });
                 }
 
-                Imgui.pushIdInt(.{@intCast(c_int, i)});
-                defer Imgui.popId();
+                const is_selected = if (self.cell_selection != null) i == self.cell_selection.?.index else false;
 
-                // TODO: callback
-                if (Imgui.inputText(.{
-                    "##hex input",
-                    str,
-                    @sizeOf(@TypeOf(str)), // wants raw size
-                    Imgui.inputTextFlagsCharsHexadecimal |
-                        Imgui.inputTextFlagsEnterReturnsTrue |
-                        Imgui.inputTextFlagsNoHorizontalScroll |
-                        Imgui.inputTextFlagsAutoSelectAll |
-                        Imgui.inputTextFlagsAlwaysOverwrite,
-                    null,
-                    null,
-                })) {
-                    if (str[2] != '\x00') {
-                        // TODO: search for issue
-                        std.log.warn("imgui broke our null terminator", .{});
-                        str[2] = '\x00';
-                    }
-                    if (!was_just_selected and str[0] != '\x00' and str[1] != '\x00') {
-                        try self.setMemoryValue(context.*, i, str[0..2]);
-                        selection.index +|= 1;
-                        selection.just_selected = true;
-                    }
+                if (is_selected) {
+                    const cursor_pos = blk: {
+                        var temp: Imgui.Vec2 = undefined;
+                        Imgui.getCursorScreenPos(.{&temp});
+                        break :blk temp;
+                    };
+
+                    // TODO: using the wrapped function causes a compiler bug
+                    // https://github.com/ziglang/zig/issues/6446
+                    //Imgui.addRectFilled(.{
+                    c.ImDrawList_AddRectFilled(
+                        draw_list,
+                        cursor_pos,
+                        .{
+                            .x = cursor_pos.x + self.layout.digit_size.x * 2,
+                            .y = cursor_pos.y + self.layout.digit_size.y,
+                        },
+                        0xffd05050,
+                        0,
+                        0,
+                    );
                 }
-            } else {
-                Imgui.text(str[0..2 :0]);
-            }
 
-            if (Imgui.isItemClicked(.{0})) {
-                self.cell_selection = CellSelection{
-                    .index = i,
-                    .editing = true,
-                };
-            }
+                const byte = self.getMemoryValue(context.*, i);
 
-            if (i & 0xf != 0xf) {
-                const spacing = if (i & 0x7 == 0x7) digit_size.x * 2 else -1;
-                Imgui.sameLine(.{ 0, spacing });
+                str.reset();
+                _ = try std.fmt.format(str.writer(), "{x:0>2}\x00", .{byte});
+                const str_slice = str.getSliceNull();
+
+                if (is_selected and self.cell_selection != null and self.cell_selection.?.editing) {
+                    const selection = &self.cell_selection.?;
+                    Imgui.setNextItemWidth(.{self.layout.digit_size.x * 2});
+
+                    const was_just_selected = selection.just_selected;
+                    // TODO: why does the mouse getting released unfocus the inputText?
+                    if (selection.just_selected or (Imgui.isWindowFocused(.{0}) and Imgui.isMouseReleased(.{0}))) {
+                        Imgui.setKeyboardFocusHere(.{0});
+                        selection.just_selected = false;
+                    }
+
+                    Imgui.pushIdInt(.{@intCast(c_int, i)});
+                    defer Imgui.popId();
+
+                    // TODO: callback
+                    if (Imgui.inputText(.{
+                        "##hex input",
+                        str_slice,
+                        @sizeOf(@TypeOf(str_slice)), // wants raw size
+                        Imgui.inputTextFlagsCharsHexadecimal |
+                            //Imgui.inputTextFlagsEnterReturnsTrue |
+                            Imgui.inputTextFlagsNoHorizontalScroll |
+                            Imgui.inputTextFlagsAutoSelectAll |
+                            Imgui.inputTextFlagsAlwaysOverwrite,
+                        null,
+                        null,
+                    })) {
+                        if (str_slice[2] != '\x00') {
+                            // TODO: search for issue
+                            std.log.warn("imgui broke our null terminator", .{});
+                            str_slice[2] = '\x00';
+                        }
+                        if (!was_just_selected and str_slice[0] != '\x00' and str_slice[1] != '\x00') {
+                            try self.setMemoryValue(context.*, i, str_slice[0..2]);
+                            selection.index +|= 1;
+                            selection.just_selected = true;
+                        }
+                    }
+                } else {
+                    Imgui.text(str_slice);
+                }
+
+                if (Imgui.isItemClicked(.{0})) {
+                    self.cell_selection = CellSelection{
+                        .index = i,
+                        .editing = true,
+                    };
+                }
+
+                if (i & 0xf != 0xf) {
+                    const spacing = if (i & 0x7 == 0x7)
+                        @intToFloat(f32, self.layout.extra_spacing_every_8 + 1) * self.layout.digit_size.x
+                    else
+                        -1;
+                    Imgui.sameLine(.{ 0, spacing });
+                }
             }
         }
 
         return true;
+    }
+
+    fn getMaxAddr(self: HexEditor) usize {
+        return switch (self.address_space) {
+            .cpu => 0xffff,
+            .ppu => 0x3fff,
+            .oam => 0x0100,
+        };
+    }
+
+    fn getMemoryValue(self: *HexEditor, context: ImguiContext, addr: usize) u8 {
+        return switch (self.address_space) {
+            .cpu => context.console.cpu.mem.peek(@truncate(u16, addr)),
+            .ppu => context.console.ppu.mem.peek(@truncate(u14, addr)),
+            .oam => context.console.ppu.oam.primary[addr],
+        };
     }
 
     fn setMemoryValue(self: HexEditor, context: ImguiContext, addr: usize, str: []const u8) !void {
@@ -161,29 +242,16 @@ pub const HexEditor = struct {
         switch (self.address_space) {
             .cpu => context.console.cpu.mem.sneak(@truncate(u16, addr), val),
             .ppu => context.console.ppu.mem.sneak(@truncate(u14, addr), val),
-        }
-    }
-
-    fn updateValues(self: *HexEditor, context: ImguiContext) !void {
-        const cpu = &context.console.cpu;
-        const ppu = &context.console.ppu;
-        const max_addr: usize = switch (self.address_space) {
-            .cpu => 0xffff,
-            .ppu => 0x3fff,
-        };
-
-        self.value_strs.reset();
-        var writer = self.value_strs.writer();
-
-        var i: usize = 0;
-        while (i <= max_addr) : (i += 1) {
-            const byte = switch (self.address_space) {
-                .cpu => cpu.mem.peek(@truncate(u16, i)),
-                .ppu => ppu.mem.peek(@truncate(u14, i)),
-            };
-            try std.fmt.format(writer, "{x:0>2}\x00", .{byte});
+            .oam => context.console.ppu.oam.primary[addr] = val,
         }
     }
 };
 
-const Layout = struct {};
+const Layout = struct {
+    address_digits: usize,
+    extra_spacing_every_8: usize,
+    bytes_per_line: usize,
+
+    digit_size: Imgui.Vec2,
+    window_width: f32,
+};

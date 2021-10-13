@@ -126,8 +126,17 @@ pub const Context = struct {
         //const copy_rate: f64 = 0.25 * (1 + length / ps);
         //const copy_rate: f64 = 0.25 * (length / ps - 1) + 1;
         const copy_rate: f64 = blk: {
-            const temp = (length / ps) - 1;
-            break :blk temp * temp * temp + 1;
+            const temp_rate = (length / ps) - 1;
+
+            const weight_pow3 = 1;
+            const meta_weight_linear = 0.5;
+            const weight_linear = meta_weight_linear * (0.9 - std.math.min(0.9, length / ps));
+
+            const pow3 = weight_pow3 * std.math.pow(f64, temp_rate, 3);
+            const linear = weight_linear * temp_rate;
+
+            break :blk (pow3 + linear) / (weight_pow3 + weight_linear) + 1;
+            //break :blk temp * temp * temp + 1;
         };
         //const copy_rate: f64 = (std.math.tanh(16 * (length - ps) / sample_rate) + 1) / 2;
         var copy_rem: f64 = 0;

@@ -201,7 +201,7 @@ pub const ImguiContext = struct {
                 frames += 1;
                 self.console.ppu.present_frame = false;
                 try self.draw();
-                total_time += self.frame_timer.waitUntilNext();
+                total_time += self.frame_timer.waitUntilNext(250 * std.time.ns_per_ms);
 
                 if (total_time > std.time.ns_per_s) {
                     frames = 0;
@@ -270,9 +270,9 @@ pub const ImguiContext = struct {
             defer Imgui.endMenu();
             if (Imgui.menuItem(.{ "Hex Editor", null, false, true })) {
                 try self.addWindow(Window.init(
-                    .{ .hex_editor = HexEditor.init(self.getParentContext().allocator) },
+                    .{ .hex_editor = HexEditor.init() },
                     try self.makeWindowNameUnique("Hex Editor"),
-                    Imgui.windowFlagsNone,
+                    Imgui.windowFlagsMenuBar,
                 ));
             }
         }
@@ -321,6 +321,7 @@ const Window = struct {
             return;
         }
 
+        try self.impl.predraw(self, context);
         defer Imgui.end();
         if (self.closeable) {
             var new_open: bool = self.open;
@@ -348,7 +349,15 @@ const WindowImpl = union(enum) {
         switch (self) {
             .game_window => {},
             .file_dialog => |x| x.deinit(),
-            .hex_editor => |x| x.deinit(),
+            .hex_editor => {},
+        }
+    }
+
+    fn predraw(self: *WindowImpl, _: *Window, _: *ImguiContext) !void {
+        switch (self.*) {
+            .game_window => {},
+            .file_dialog => {},
+            .hex_editor => |*x| try x.predraw(),
         }
     }
 

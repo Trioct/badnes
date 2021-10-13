@@ -22,6 +22,14 @@ pub const StringBuilder = struct {
         self.buffer.deinit();
     }
 
+    pub fn getSlice(self: *StringBuilder) []u8 {
+        return self.buffer.items;
+    }
+
+    pub fn getSliceNull(self: *StringBuilder) [:0]u8 {
+        return self.buffer.items[0 .. self.buffer.items.len - 1 :0];
+    }
+
     pub fn toOwnedSlice(self: *StringBuilder) []u8 {
         return self.buffer.toOwnedSlice();
     }
@@ -110,7 +118,10 @@ pub const FrameTimer = struct {
         };
     }
 
-    pub fn waitUntilNext(self: *FrameTimer) i128 {
+    /// giveup_ns is how much of a difference between next frame and last frame
+    /// is allowed before giving up and resetting last_frame_timestamp
+    /// mostly useful so if it speeds up again it doesn't play fast forward for too long
+    pub fn waitUntilNext(self: *FrameTimer, giveup_ns: ?i128) i128 {
         const frame_ns = @floatToInt(i128, time.ns_per_s * self.frame_time);
         const now = time.nanoTimestamp();
         const to_sleep = self.next_frame_timestamp - now;
@@ -121,7 +132,17 @@ pub const FrameTimer = struct {
             passed += to_sleep;
         }
 
-        self.last_frame_timestamp += passed;
+        self.last_frame_timestamp = now;
+        if (giveup_ns) |t| {
+            if (self.last_frame_timestamp - self.next_frame_timestamp > t) {
+                std.log.debug(
+                    "We fell behind the timer (> {}ms behind), resetting",
+                    .{@divTrunc(t, std.time.ns_per_ms)},
+                );
+                self.next_frame_timestamp = now + frame_ns;
+                return passed;
+            }
+        }
         self.next_frame_timestamp += frame_ns;
 
         return passed;
