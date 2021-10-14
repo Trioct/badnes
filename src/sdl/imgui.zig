@@ -35,11 +35,6 @@ pub const ImguiContext = struct {
     // for my testing pleasure before input configuration
     temp_controller: ?*c.SDL_GameController,
 
-    // TODO: move this
-    const FileDialogReason = enum {
-        open_rom,
-    };
-
     const SyncMethod = enum {
         no_sync,
         sync_to_console,
@@ -63,7 +58,7 @@ pub const ImguiContext = struct {
             .windows = HashMap(Window).init(parent_context.allocator),
 
             .game_pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
-            .frame_timer = util.FrameTimer.init(util.FrameTimer.ntsc_frame_time * 4),
+            .frame_timer = util.FrameTimer.init(util.FrameTimer.ntsc_frame_time),
 
             .temp_controller = Sdl.gameControllerOpen(.{0}),
         };
@@ -79,9 +74,8 @@ pub const ImguiContext = struct {
             .{ .game_window = .{} },
             try parent_context.allocator.dupeZ(u8, "NES"),
             Imgui.windowFlagsAlwaysAutoResize,
-            .window,
+            .{ .window = .{ .closeable = false } },
         );
-        game_window.closeable = false;
         try self.addWindow(game_window);
 
         return self;
@@ -282,6 +276,7 @@ pub const ImguiContext = struct {
         if (want_vsync != self.vsync_enabled) {
             try Sdl.glSetSwapInterval(.{@boolToInt(want_vsync)});
             self.vsync_enabled = want_vsync;
+            std.log.debug("vsync = {}", .{want_vsync});
         }
 
         Imgui.opengl3NewFrame();
@@ -343,13 +338,13 @@ pub const ImguiContext = struct {
                     .{ .hex_editor = HexEditor.init() },
                     try self.makeWindowNameUnique("Hex Editor"),
                     Imgui.windowFlagsMenuBar,
-                    .window,
+                    .{ .window = .{} },
                 ));
             }
         }
     }
 
-    fn openFileDialog(self: *ImguiContext, comptime reason: FileDialogReason) !void {
+    fn openFileDialog(self: *ImguiContext, comptime reason: FileDialog.OpenReason) !void {
         const name = "Choose a file##" ++ @tagName(reason);
         if (!self.isWindowAvailable(name)) {
             return;
@@ -358,7 +353,7 @@ pub const ImguiContext = struct {
             .{ .file_dialog = try FileDialog.init(self.getParentContext().allocator) },
             try self.getParentContext().allocator.dupeZ(u8, name),
             Imgui.windowFlagsNone,
-            .window,
+            .{ .popup_modal = .{} },
         ));
     }
 };
@@ -372,14 +367,19 @@ const Window = struct {
     flags: Flags,
     window_type: WindowType,
 
-    closeable: bool = true,
     open: bool = true,
-    popup_opened: bool = false,
 
-    const WindowType = enum {
-        window,
-        popup,
-        popup_modal,
+    const WindowType = union(enum) {
+        window: struct {
+            closeable: bool = true,
+        },
+        popup: struct {
+            waiting_for_open: bool = true,
+        },
+        popup_modal: struct {
+            closeable: bool = true,
+            waiting_for_open: bool = true,
+        },
     };
 
     fn init(impl: WindowImpl, title: [:0]const u8, flags: Flags, window_type: WindowType) Window {
@@ -404,16 +404,14 @@ const Window = struct {
 
         try self.impl.predraw(self, context);
         switch (self.window_type) {
-            .window => {
+            .window => |window_options| {
                 defer Imgui.end();
-                if (self.closeable) {
-                    var new_open: bool = self.open;
-                    defer self.open = new_open;
-                    if (Imgui.begin(.{ self.title, &new_open, self.flags })) {
-                        if (new_open) {
-                            new_open = try self.impl.draw(self, context);
+                if (window_options.closeable) {
+                    if (Imgui.begin(.{ self.title, &self.open, self.flags })) {
+                        if (self.open) {
+                            self.open = try self.impl.draw(self, context);
                         }
-                        if (!new_open) {
+                        if (!self.open) {
                             try self.impl.onClosed(context);
                             std.log.debug("Closed window: {s}", .{self.title});
                         }
@@ -422,10 +420,10 @@ const Window = struct {
                     _ = try self.impl.draw(self, context);
                 }
             },
-            .popup => {
-                if (!self.popup_opened) {
+            .popup => |*popup_options| {
+                if (popup_options.waiting_for_open) {
                     Imgui.openPopup(.{ self.title, 0 });
-                    self.popup_opened = true;
+                    popup_options.waiting_for_open = false;
                 }
 
                 if (Imgui.beginPopup(.{ self.title, self.flags })) {
@@ -440,7 +438,33 @@ const Window = struct {
                     self.open = false;
                 }
             },
-            .popup_modal => @panic(".popup_modal not yet implemented"),
+            .popup_modal => |*modal_options| {
+                if (modal_options.waiting_for_open) {
+                    Imgui.openPopup(.{ self.title, 0 });
+                    modal_options.waiting_for_open = false;
+                }
+
+                const was_open = self.open;
+                if (modal_options.closeable) {
+                    if (Imgui.beginPopupModal(.{ self.title, &self.open, self.flags })) {
+                        defer Imgui.endPopup();
+                        self.open = try self.impl.draw(self, context);
+                    } else {
+                        self.open = false;
+                    }
+                } else if (Imgui.beginPopupModal(.{ self.title, null, self.flags })) {
+                    defer Imgui.endPopup();
+                    self.open = try self.impl.draw(self, context);
+                } else {
+                    self.open = false;
+                }
+
+                if (was_open and !self.open) {
+                    try self.impl.onClosed(context);
+                    Imgui.closeCurrentPopup();
+                    std.log.debug("Closed popup modal: {s}", .{self.title});
+                }
+            },
         }
     }
 };

@@ -11,6 +11,10 @@ pub const FileDialog = struct {
     buffer: util.RefBuffer(u8),
     current_dir: DirWalker,
 
+    pub const OpenReason = enum {
+        open_rom,
+    };
+
     pub fn init(allocator: *Allocator) !FileDialog {
         var buffer = try util.RefBuffer(u8).init(allocator, 1024);
         const current_dir = try DirWalker.init(allocator, ".", buffer.slice);
