@@ -322,15 +322,16 @@ pub const ImguiContext = struct {
 
         if (Imgui.beginMenu(.{ "Video", true })) {
             defer Imgui.endMenu();
-            if (Imgui.menuItem(.{ "Sync", null, false, true })) {
-                const name = "Sync Method Select";
-                if (self.isWindowAvailable(name)) {
-                    try self.addWindow(Window.init(
-                        .{ .sync_method_select = SyncMethodSelect{} },
-                        try self.getParentContext().allocator.dupeZ(u8, name),
-                        Imgui.windowFlagsNone,
-                        .popup,
-                    ));
+            if (Imgui.beginMenu(.{ "Sync", true })) {
+                defer Imgui.endMenu();
+                inline for (.{
+                    .{ .label = "No Sync", .method = .no_sync },
+                    .{ .label = "Sync To Console", .method = .sync_to_console },
+                    .{ .label = "Sync To Display", .method = .sync_to_display },
+                }) |selectable_info| {
+                    if (Imgui.menuItem(.{ selectable_info.label, null, false, true })) {
+                        self.sync_method = selectable_info.method;
+                    }
                 }
             }
         }
@@ -445,8 +446,6 @@ const Window = struct {
 };
 
 const WindowImpl = union(enum) {
-    sync_method_select: SyncMethodSelect,
-
     game_window: GameWindow,
     hex_editor: HexEditor,
 
@@ -454,8 +453,6 @@ const WindowImpl = union(enum) {
 
     fn deinit(self: WindowImpl, _: *Allocator) void {
         switch (self) {
-            .sync_method_select => {},
-
             .game_window => {},
             .hex_editor => {},
 
@@ -465,8 +462,6 @@ const WindowImpl = union(enum) {
 
     fn predraw(self: *WindowImpl, _: *Window, _: *ImguiContext) !void {
         switch (self.*) {
-            .sync_method_select => {},
-
             .game_window => {},
             .hex_editor => |*x| try x.predraw(),
 
@@ -476,8 +471,6 @@ const WindowImpl = union(enum) {
 
     fn draw(self: *WindowImpl, _: *Window, context: *ImguiContext) !bool {
         switch (self.*) {
-            .sync_method_select => |*x| return x.draw(),
-
             .game_window => |x| return x.draw(context.*),
             .hex_editor => |*x| return x.draw(context),
 
@@ -485,10 +478,8 @@ const WindowImpl = union(enum) {
         }
     }
 
-    fn onClosed(self: *WindowImpl, context: *ImguiContext) !void {
+    fn onClosed(self: *WindowImpl, _: *ImguiContext) !void {
         switch (self.*) {
-            .sync_method_select => |x| return x.onClosed(context),
-
             .game_window => {},
             .hex_editor => {},
 
@@ -522,32 +513,5 @@ const GameWindow = struct {
         });
 
         return true;
-    }
-};
-
-const SyncMethodSelect = struct {
-    sync_method: ?ImguiContext.SyncMethod = null,
-
-    fn draw(self: *SyncMethodSelect) !bool {
-        inline for (.{
-            .{ .label = "No Sync", .method = .no_sync },
-            .{ .label = "Sync To Console", .method = .sync_to_console },
-            .{ .label = "Sync To Display", .method = .sync_to_display },
-        }) |selectable_info| {
-            if (Imgui.selectable(.{ selectable_info.label, false, 0, .{ .x = 0, .y = 0 } })) {
-                self.sync_method = selectable_info.method;
-                return false;
-            }
-        }
-        return true;
-    }
-
-    fn onClosed(self: SyncMethodSelect, context: *ImguiContext) void {
-        if (self.sync_method) |method| {
-            context.sync_method = method;
-            std.log.debug("Set sync method to {}", .{method});
-        } else {
-            std.log.err("Sync Method Select popup decided to close without a selection", .{});
-        }
     }
 };
