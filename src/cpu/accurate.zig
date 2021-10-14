@@ -248,11 +248,11 @@ pub fn Cpu(comptime config: Config) type {
         fn runCycle1(self: *Self) void {
             switch (self.state.addressing) {
                 .special => self.runCycle1Special(),
-                .absolute, .absoluteX, .absoluteY => _ = self.fetchNextByte(),
-                .indirectX, .indirectY, .relative => self.state.c_byte = self.fetchNextByte(),
+                .absolute, .absolute_x, .absolute_y => _ = self.fetchNextByte(),
+                .indirect_x, .indirect_y, .relative => self.state.c_byte = self.fetchNextByte(),
                 .implied => self.runCycle1Implied(),
                 .immediate => self.runCycle1Immediate(),
-                .zeroPage, .zeroPageX, .zeroPageY => self.state.c_addr = self.fetchNextByte(),
+                .zero_page, .zero_page_x, .zero_page_y => self.state.c_addr = self.fetchNextByte(),
             }
         }
 
@@ -260,14 +260,14 @@ pub fn Cpu(comptime config: Config) type {
             switch (self.state.addressing) {
                 .special => self.runCycle2Special(),
                 .absolute => self.runCycle2Absolute(),
-                .absoluteX => self.runCycle2AbsoluteIndexed(self.reg.x),
-                .absoluteY => self.runCycle2AbsoluteIndexed(self.reg.y),
-                .indirectX => self.runCycle2IndirectX(),
-                .indirectY => _ = self.mem.read(self.state.c_byte),
+                .absolute_x => self.runCycle2AbsoluteIndexed(self.reg.x),
+                .absolute_y => self.runCycle2AbsoluteIndexed(self.reg.y),
+                .indirect_x => self.runCycle2IndirectX(),
+                .indirect_y => _ = self.mem.read(self.state.c_byte),
                 .relative => self.runCycle2Relative(),
-                .zeroPage => self.runCycleAccess0(),
-                .zeroPageX => self.runCycle2ZpIndirect(self.reg.x),
-                .zeroPageY => self.runCycle2ZpIndirect(self.reg.y),
+                .zero_page => self.runCycleAccess0(),
+                .zero_page_x => self.runCycle2ZpIndirect(self.reg.x),
+                .zero_page_y => self.runCycle2ZpIndirect(self.reg.y),
                 else => unreachable,
             }
         }
@@ -276,13 +276,13 @@ pub fn Cpu(comptime config: Config) type {
             switch (self.state.addressing) {
                 .special => self.runCycle3Special(),
                 .absolute => self.runCycleAccess0(),
-                .absoluteX => self.runCycle3AbsoluteIndexed(self.reg.x),
-                .absoluteY => self.runCycle3AbsoluteIndexed(self.reg.y),
-                .indirectX => _ = self.mem.read(self.state.c_byte),
-                .indirectY => self.runCycle3IndirectY(),
+                .absolute_x => self.runCycle3AbsoluteIndexed(self.reg.x),
+                .absolute_y => self.runCycle3AbsoluteIndexed(self.reg.y),
+                .indirect_x => _ = self.mem.read(self.state.c_byte),
+                .indirect_y => self.runCycle3IndirectY(),
                 .relative => self.runCycle3Relative(),
-                .zeroPage => self.runCycleAccess1(),
-                .zeroPageX, .zeroPageY => self.runCycleAccess0(),
+                .zero_page => self.runCycleAccess1(),
+                .zero_page_x, .zero_page_y => self.runCycleAccess0(),
                 else => unreachable,
             }
         }
@@ -291,12 +291,12 @@ pub fn Cpu(comptime config: Config) type {
             switch (self.state.addressing) {
                 .special => self.runCycle4Special(),
                 .absolute => self.runCycleAccess1(),
-                .absoluteX, .absoluteY => self.runCycleAccess0(),
+                .absolute_x, .absolute_y => self.runCycleAccess0(),
                 .relative => self.runCycle4Relative(),
-                .indirectX => self.runCycle4IndirectX(),
-                .indirectY => self.runCycle4IndirectY(),
-                .zeroPage => self.runCycleAccess2(),
-                .zeroPageX, .zeroPageY => self.runCycleAccess1(),
+                .indirect_x => self.runCycle4IndirectX(),
+                .indirect_y => self.runCycle4IndirectY(),
+                .zero_page => self.runCycleAccess2(),
+                .zero_page_x, .zero_page_y => self.runCycleAccess1(),
                 else => unreachable,
             }
         }
@@ -305,24 +305,24 @@ pub fn Cpu(comptime config: Config) type {
             switch (self.state.addressing) {
                 .special => self.runCycle5Special(),
                 .absolute => self.runCycleAccess2(),
-                .absoluteX, .absoluteY => self.runCycleAccess1(),
-                .indirectX, .indirectY => self.runCycleAccess0(),
-                .zeroPageX, .zeroPageY => self.runCycleAccess2(),
+                .absolute_x, .absolute_y => self.runCycleAccess1(),
+                .indirect_x, .indirect_y => self.runCycleAccess0(),
+                .zero_page_x, .zero_page_y => self.runCycleAccess2(),
                 else => unreachable,
             }
         }
 
         fn runCycle6(self: *Self) void {
             switch (self.state.addressing) {
-                .absoluteX, .absoluteY => self.runCycleAccess2(),
-                .indirectX, .indirectY => self.runCycleAccess1(),
+                .absolute_x, .absolute_y => self.runCycleAccess2(),
+                .indirect_x, .indirect_y => self.runCycleAccess1(),
                 else => unreachable,
             }
         }
 
         fn runCycle7(self: *Self) void {
             switch (self.state.addressing) {
-                .indirectX, .indirectY => self.runCycleAccess2(),
+                .indirect_x, .indirect_y => self.runCycleAccess2(),
                 else => unreachable,
             }
         }

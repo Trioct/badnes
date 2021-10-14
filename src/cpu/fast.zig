@@ -143,12 +143,12 @@ pub fn Cpu(comptime config: Config) type {
                     .absolute => {
                         break :blk ValueReference{ .memory = self.mem.readWord(self.reg.pc) };
                     },
-                    .absoluteX => {
+                    .absolute_x => {
                         const val = self.mem.readWord(self.reg.pc);
                         self.cycles += @boolToInt(instruction.var_cycles and (val +% self.reg.x) & 0xff < val & 0xff);
                         break :blk ValueReference{ .memory = val +% self.reg.x };
                     },
-                    .absoluteY => {
+                    .absolute_y => {
                         const val = self.mem.readWord(self.reg.pc);
                         self.cycles += @boolToInt(instruction.var_cycles and (val +% self.reg.y) & 0xff < val & 0xff);
                         break :blk ValueReference{ .memory = val +% self.reg.y };
@@ -163,14 +163,14 @@ pub fn Cpu(comptime config: Config) type {
                         const val_high = self.mem.read(addr_high | (addr_low +% 1));
                         break :blk ValueReference{ .memory = (@as(u16, val_high) << 8) | val_low };
                     },
-                    .indirectX => {
+                    .indirect_x => {
                         const zero_page = self.mem.read(self.reg.pc);
 
                         const val_low = self.mem.read(zero_page +% self.reg.x);
                         const val_high = self.mem.read(zero_page +% self.reg.x +% 1);
                         break :blk ValueReference{ .memory = (@as(u16, val_high) << 8) | val_low };
                     },
-                    .indirectY => {
+                    .indirect_y => {
                         const zero_page = self.mem.read(self.reg.pc);
 
                         const val_low = self.mem.read(zero_page);
@@ -180,15 +180,15 @@ pub fn Cpu(comptime config: Config) type {
                         break :blk ValueReference{ .memory = ((@as(u16, val_high) << 8) | val_low) +% self.reg.y };
                     },
                     .relative => break :blk ValueReference{ .memory = self.reg.pc },
-                    .zeroPage => {
+                    .zero_page => {
                         const zero_page = self.mem.read(self.reg.pc);
                         break :blk ValueReference{ .memory = zero_page };
                     },
-                    .zeroPageX => {
+                    .zero_page_x => {
                         const zero_page = self.mem.read(self.reg.pc);
                         break :blk ValueReference{ .memory = zero_page +% self.reg.x };
                     },
-                    .zeroPageY => {
+                    .zero_page_y => {
                         const zero_page = self.mem.read(self.reg.pc);
                         break :blk ValueReference{ .memory = zero_page +% self.reg.y };
                     },
@@ -440,14 +440,14 @@ pub fn Cpu(comptime config: Config) type {
                 .absolute => {
                     std.debug.print("${x:0>4}    \t; ${0x:0>4} = #${x:0>2}", .{ value.memory, value.peek(self) });
                 },
-                .absoluteX => {
+                .absolute_x => {
                     std.debug.print("${x:0>4},x  \t; ${0x:0>4} = #${x:0>2}\tx = #${x:0>2}", .{
                         value.memory,
                         value.peek(self),
                         self.reg.x,
                     });
                 },
-                .absoluteY => {
+                .absolute_y => {
                     std.debug.print("${x:0>4},y  \t; ${0x:0>4} = #${x:0>2}\ty = #${x:0>2}", .{
                         value.memory,
                         value.peek(self),
@@ -459,7 +459,7 @@ pub fn Cpu(comptime config: Config) type {
                 .indirect => {
                     std.debug.print("(${x:0>4})  \t; (${0x:0>4}) = ${x:0>4}", .{ address, value.memory });
                 },
-                .indirectX => {
+                .indirect_x => {
                     std.debug.print("(${x:0>2},x)\t; (${0x:0>4},{x:0>2}) = ${x:0>4} = #${x:0>2}", .{
                         low,
                         self.reg.x,
@@ -467,7 +467,7 @@ pub fn Cpu(comptime config: Config) type {
                         value.peek(self),
                     });
                 },
-                .indirectY => {
+                .indirect_y => {
                     std.debug.print("(${x:0>2}),y\t; (${0x:0>4}),{x:0>2} = ${x:0>4} = #${x:0>2}", .{
                         low,
                         self.reg.y,
@@ -480,13 +480,13 @@ pub fn Cpu(comptime config: Config) type {
                     const new_pc = @bitCast(u16, @bitCast(i16, self.reg.pc) +% @bitCast(i8, val) +% 1);
                     std.debug.print("${x:0>2}      \t; PC ?= ${x:0>4}", .{ val, new_pc });
                 },
-                .zeroPage => {
+                .zero_page => {
                     std.debug.print("${x:0>2}      \t; ${0x:0>2} = #${x:0>2}", .{ value.memory, value.peek(self) });
                 },
-                .zeroPageX => {
+                .zero_page_x => {
                     std.debug.print("${x:0>2},x    \t; ${0x:0>2} = #${x:0>2}", .{ value.memory, value.peek(self) });
                 },
-                .zeroPageY => {
+                .zero_page_y => {
                     std.debug.print("${x:0>2},y    \t; ${0x:0>2} = #${x:0>2}", .{ value.memory, value.peek(self) });
                 },
             }
