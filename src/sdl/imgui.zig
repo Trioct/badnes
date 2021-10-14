@@ -14,8 +14,9 @@ const Context = @import("context.zig").Context;
 const PixelBuffer = @import("basic_video.zig").PixelBuffer;
 
 const util = @import("imgui/util.zig");
-const FileDialog = @import("imgui/file_dialog.zig").FileDialog;
 const HexEditor = @import("imgui/hex_editor.zig").HexEditor;
+const Debugger = @import("imgui/debugger.zig").Debugger;
+const FileDialog = @import("imgui/file_dialog.zig").FileDialog;
 
 pub const ImguiContext = struct {
     console: *Console(.{ .precision = .accurate, .method = .sdl }),
@@ -143,7 +144,6 @@ pub const ImguiContext = struct {
         return &self.game_pixel_buffer;
     }
 
-    /// Pauses the console, sets vsync as the frame syncing method
     pub fn pause(self: *ImguiContext) !void {
         if (self.paused) {
             return;
@@ -153,7 +153,6 @@ pub const ImguiContext = struct {
         self.getParentContext().audio_context.pause();
     }
 
-    /// Unpauses the console, sync frames to the console (~60fps)
     pub fn unpause(self: *ImguiContext) !void {
         if (!self.paused) {
             return;
@@ -183,7 +182,9 @@ pub const ImguiContext = struct {
         var parent_context = self.getParentContext();
         var event: c.SDL_Event = undefined;
 
-        parent_context.audio_context.unpause();
+        if (parent_context.console.cart.rom_loaded) {
+            try self.unpause();
+        }
 
         var total_time: i128 = 0;
         var console_frames: usize = 0;
@@ -208,12 +209,6 @@ pub const ImguiContext = struct {
 
             if (!self.console.cart.rom_loaded) {
                 continue;
-            }
-
-            switch (self.sync_method) {
-                // sync_to_display syncing is handled via draw/wantVsync
-                .no_sync, .sync_to_display => {},
-                .sync_to_console => {},
             }
 
             const cpu = &self.console.cpu;
@@ -333,6 +328,14 @@ pub const ImguiContext = struct {
 
         if (Imgui.beginMenu(.{ "Tools", true })) {
             defer Imgui.endMenu();
+            if (Imgui.menuItem(.{ "Debugger", null, false, true })) {
+                try self.addWindow(Window.init(
+                    .{ .debugger = Debugger.init() },
+                    try self.makeWindowNameUnique("Debugger"),
+                    Imgui.windowFlagsNone,
+                    .{ .window = .{} },
+                ));
+            }
             if (Imgui.menuItem(.{ "Hex Editor", null, false, true })) {
                 try self.addWindow(Window.init(
                     .{ .hex_editor = HexEditor.init() },
@@ -472,6 +475,7 @@ const Window = struct {
 const WindowImpl = union(enum) {
     game_window: GameWindow,
     hex_editor: HexEditor,
+    debugger: Debugger,
 
     file_dialog: FileDialog,
 
@@ -479,6 +483,7 @@ const WindowImpl = union(enum) {
         switch (self) {
             .game_window => {},
             .hex_editor => {},
+            .debugger => {},
 
             .file_dialog => |x| x.deinit(),
         }
@@ -488,6 +493,7 @@ const WindowImpl = union(enum) {
         switch (self.*) {
             .game_window => {},
             .hex_editor => |*x| try x.predraw(),
+            .debugger => {},
 
             .file_dialog => {},
         }
@@ -497,6 +503,7 @@ const WindowImpl = union(enum) {
         switch (self.*) {
             .game_window => |x| return x.draw(context.*),
             .hex_editor => |*x| return x.draw(context),
+            .debugger => |x| return x.draw(context),
 
             .file_dialog => |*x| return x.draw(context),
         }
@@ -506,6 +513,7 @@ const WindowImpl = union(enum) {
         switch (self.*) {
             .game_window => {},
             .hex_editor => {},
+            .debugger => {},
 
             .file_dialog => {},
         }

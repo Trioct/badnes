@@ -61,6 +61,10 @@ pub const StringBuilder = struct {
         try self.buffer.appendSlice(bytes);
         return bytes.len;
     }
+
+    pub fn nullTerminate(self: *StringBuilder) !void {
+        return self.buffer.append('\x00');
+    }
 };
 
 pub fn RefBuffer(comptime T: type) type {
