@@ -143,6 +143,8 @@ pub const Imgui = struct {
     pub const pushIdInt = wrap(c.igPushID_Int, empty_options);
     pub const popId = wrap(c.igPopID, empty_options);
 
+    pub const openPopup = wrap(c.igOpenPopup_Str, empty_options);
+    pub const closeCurrentPopup = wrap(c.igCloseCurrentPopup, empty_options);
     pub const beginPopup = wrap(c.igBeginPopup, empty_options);
     pub const beginPopupModal = wrap(c.igBeginPopupModal, empty_options);
     pub const endPopup = wrap(c.igEndPopup, empty_options);
@@ -170,6 +172,7 @@ pub const Imgui = struct {
     pub const inputText = wrap(c.igInputText, empty_options);
     pub const button = wrap(c.igButton, empty_options);
     pub const image = wrap(c.igImage, empty_options);
+    pub const selectable = wrap(c.igSelectable_Bool, empty_options);
 
     pub const listClipperInit = wrap(c.ImGuiListClipper_ImGuiListClipper, empty_options);
     pub const listClipperDeinit = wrap(c.ImGuiListClipper_destroy, empty_options);

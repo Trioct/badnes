@@ -102,14 +102,25 @@ pub fn RefBuffer(comptime T: type) type {
 }
 
 pub const FrameTimer = struct {
+    pub const ntsc_frame_time: f64 = (4 * (261 * 341 + 340.5)) / 21477272.0;
     frame_time: f64,
 
     paused_timestamp: ?i128 = null,
     last_frame_timestamp: i128,
     next_frame_timestamp: i128,
 
+    pub const TimingMethod = enum {
+        no_sleep,
+        sleep,
+    };
+
+    pub const CheckResult = struct {
+        ns_passed: i128,
+        frames_passed: usize,
+    };
+
     pub fn init(frame_time: ?f64) FrameTimer {
-        const ft_default = frame_time orelse (4 * (261 * 341 + 340.5)) / 21477272.0;
+        const ft_default = frame_time orelse ntsc_frame_time;
         const now = time.nanoTimestamp();
         return FrameTimer{
             .frame_time = ft_default,
@@ -118,34 +129,47 @@ pub const FrameTimer = struct {
         };
     }
 
-    /// giveup_ns is how much of a difference between next frame and last frame
-    /// is allowed before giving up and resetting last_frame_timestamp
-    /// mostly useful so if it speeds up again it doesn't play fast forward for too long
-    pub fn waitUntilNext(self: *FrameTimer, giveup_ns: ?i128) i128 {
+    /// Giveup_frames is how many frames we can be behind before giving up and
+    /// Resetting the goal for the timer
+    pub fn check(self: *FrameTimer, method: TimingMethod, giveup_frames: ?usize) CheckResult {
         const frame_ns = @floatToInt(i128, time.ns_per_s * self.frame_time);
         const now = time.nanoTimestamp();
-        const to_sleep = self.next_frame_timestamp - now;
         var passed = now - self.last_frame_timestamp;
 
-        if (to_sleep > 0) {
-            time.sleep(@intCast(u64, to_sleep));
-            passed += to_sleep;
+        switch (method) {
+            .no_sleep => {},
+            .sleep => {
+                const to_sleep = self.next_frame_timestamp - now;
+                if (to_sleep > 0) {
+                    time.sleep(@intCast(u64, to_sleep));
+                    passed += to_sleep;
+                }
+            },
         }
 
-        self.last_frame_timestamp = now;
-        if (giveup_ns) |t| {
-            if (self.last_frame_timestamp - self.next_frame_timestamp > t) {
+        const old_last = self.last_frame_timestamp;
+        self.last_frame_timestamp += passed;
+        const frames_passed = @divTrunc(self.last_frame_timestamp, frame_ns) - @divTrunc(old_last, frame_ns);
+
+        if (giveup_frames) |gf| {
+            const time_behind = self.last_frame_timestamp - self.next_frame_timestamp;
+            const frames_behind = @divTrunc(time_behind, frame_ns);
+            if (frames_behind >= gf) {
                 std.log.debug(
-                    "We fell behind the timer (> {}ms behind), resetting",
-                    .{@divTrunc(t, std.time.ns_per_ms)},
+                    "We fell {} frames behind the timer (> {} frames), resetting timer",
+                    .{ frames_behind, gf },
                 );
-                self.next_frame_timestamp = now + frame_ns;
-                return passed;
+                self.next_frame_timestamp = self.last_frame_timestamp;
             }
         }
-        self.next_frame_timestamp += frame_ns;
+        if (self.last_frame_timestamp >= self.next_frame_timestamp) {
+            self.next_frame_timestamp += frame_ns;
+        }
 
-        return passed;
+        return CheckResult{
+            .ns_passed = passed,
+            .frames_passed = @intCast(usize, frames_passed),
+        };
     }
 
     pub fn pause(self: *FrameTimer) void {

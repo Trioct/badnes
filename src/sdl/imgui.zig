@@ -23,16 +23,27 @@ pub const ImguiContext = struct {
 
     /// Do not manually set this, use the pause/unpause functions
     paused: bool = false,
+    sync_method: SyncMethod = .sync_to_display,
     quit: bool = false,
 
     game_pixel_buffer: PixelBuffer,
     frame_timer: util.FrameTimer,
 
+    /// Do not manually set
+    vsync_enabled: bool = false,
+
     // for my testing pleasure before input configuration
     temp_controller: ?*c.SDL_GameController,
 
+    // TODO: move this
     const FileDialogReason = enum {
         open_rom,
+    };
+
+    const SyncMethod = enum {
+        no_sync,
+        sync_to_console,
+        sync_to_display,
     };
 
     pub fn init(
@@ -52,7 +63,7 @@ pub const ImguiContext = struct {
             .windows = HashMap(Window).init(parent_context.allocator),
 
             .game_pixel_buffer = try PixelBuffer.init(parent_context.allocator, 256, 240),
-            .frame_timer = util.FrameTimer.init(null),
+            .frame_timer = util.FrameTimer.init(util.FrameTimer.ntsc_frame_time * 4),
 
             .temp_controller = Sdl.gameControllerOpen(.{0}),
         };
@@ -68,6 +79,7 @@ pub const ImguiContext = struct {
             .{ .game_window = .{} },
             try parent_context.allocator.dupeZ(u8, "NES"),
             Imgui.windowFlagsAlwaysAutoResize,
+            .window,
         );
         game_window.closeable = false;
         try self.addWindow(game_window);
@@ -145,7 +157,6 @@ pub const ImguiContext = struct {
         self.paused = true;
         self.frame_timer.pause();
         self.getParentContext().audio_context.pause();
-        try Sdl.glSetSwapInterval(.{1});
     }
 
     /// Unpauses the console, sync frames to the console (~60fps)
@@ -156,7 +167,6 @@ pub const ImguiContext = struct {
         self.paused = false;
         self.frame_timer.unpause();
         self.getParentContext().audio_context.unpause();
-        try Sdl.glSetSwapInterval(.{0});
     }
 
     pub fn togglePause(self: *ImguiContext) !void {
@@ -171,6 +181,10 @@ pub const ImguiContext = struct {
         return !self.paused and self.console.cart.rom_loaded;
     }
 
+    pub fn wantVsync(self: ImguiContext) bool {
+        return self.paused or self.sync_method == .sync_to_display;
+    }
+
     pub fn mainLoop(self: *ImguiContext) !void {
         var parent_context = self.getParentContext();
         var event: c.SDL_Event = undefined;
@@ -178,7 +192,8 @@ pub const ImguiContext = struct {
         parent_context.audio_context.unpause();
 
         var total_time: i128 = 0;
-        var frames: usize = 0;
+        var console_frames: usize = 0;
+        var gui_frames: usize = 0;
         mloop: while (!self.quit) {
             while (Sdl.pollEvent(.{&event}) == 1) {
                 _ = Imgui.sdl2ProcessEvent(.{&event});
@@ -197,39 +212,78 @@ pub const ImguiContext = struct {
                 continue;
             }
 
-            if (self.console.ppu.present_frame) {
-                frames += 1;
-                self.console.ppu.present_frame = false;
-                try self.draw();
-                total_time += self.frame_timer.waitUntilNext(250 * std.time.ns_per_ms);
-
-                if (total_time > std.time.ns_per_s) {
-                    frames = 0;
-                    total_time -= std.time.ns_per_s;
-                }
+            if (!self.console.cart.rom_loaded) {
+                continue;
             }
 
-            // Batch run instructions/cycles to not get bogged down by Sdl.pollEvent
-            if (self.console.cart.rom_loaded) {
-                const cpu = &self.console.cpu;
-                var i: usize = 0;
-                switch (@import("build_options").precision) {
-                    .fast => {
-                        while (i < 2000) : (i += 1) {
+            switch (self.sync_method) {
+                // sync_to_display syncing is handled via draw/wantVsync
+                .no_sync, .sync_to_display => {},
+                .sync_to_console => {},
+            }
+
+            const cpu = &self.console.cpu;
+            const ppu = &self.console.ppu;
+
+            switch (self.sync_method) {
+                .no_sync => {
+                    while (!ppu.present_frame) {
+                        cpu.runStep();
+                    }
+                    ppu.present_frame = false;
+                    try self.draw();
+                    console_frames += 1;
+                    gui_frames += 1;
+                    total_time += self.frame_timer.check(.no_sleep, null).ns_passed;
+                },
+                .sync_to_display => {
+                    const check_result = self.frame_timer.check(.no_sleep, null);
+                    var i: usize = 0;
+                    while (i < check_result.frames_passed) : (i += 1) {
+                        while (!ppu.present_frame) {
                             cpu.runStep();
                         }
-                    },
-                    .accurate => {
-                        while (i < 5000) : (i += 1) {
-                            cpu.runStep();
-                        }
-                    },
-                }
+                        ppu.present_frame = false;
+                        console_frames += 1;
+                    }
+                    total_time += check_result.ns_passed;
+                    try self.draw();
+                    gui_frames += 1;
+                },
+                .sync_to_console => {
+                    // Batch run instructions/cycles to not get bogged down by Sdl.pollEvent
+                    // Maybe I should just run until present frame, not sure the frequent
+                    // event polling will really make it feel more responsive
+                    var i: usize = 0;
+                    while (i < 5000) : (i += 1) {
+                        cpu.runStep();
+                    }
+                    if (ppu.present_frame) {
+                        ppu.present_frame = false;
+                        try self.draw();
+                        console_frames += 1;
+                        gui_frames += 1;
+                        total_time += self.frame_timer.check(.sleep, 8).ns_passed;
+                    }
+                },
+            }
+
+            if (total_time > std.time.ns_per_s) {
+                //std.log.debug("FPS: Console: {}, GUI: {}", .{ console_frames, gui_frames });
+                console_frames = 0;
+                gui_frames = 0;
+                total_time -= std.time.ns_per_s;
             }
         }
     }
 
     pub fn draw(self: *ImguiContext) !void {
+        const want_vsync = self.wantVsync();
+        if (want_vsync != self.vsync_enabled) {
+            try Sdl.glSetSwapInterval(.{@boolToInt(want_vsync)});
+            self.vsync_enabled = want_vsync;
+        }
+
         Imgui.opengl3NewFrame();
         Imgui.sdl2NewFrame();
         Imgui.newFrame();
@@ -266,6 +320,21 @@ pub const ImguiContext = struct {
             _ = Imgui.menuItemPtr(.{ "Exit", null, &self.quit, true });
         }
 
+        if (Imgui.beginMenu(.{ "Video", true })) {
+            defer Imgui.endMenu();
+            if (Imgui.menuItem(.{ "Sync", null, false, true })) {
+                const name = "Sync Method Select";
+                if (self.isWindowAvailable(name)) {
+                    try self.addWindow(Window.init(
+                        .{ .sync_method_select = SyncMethodSelect{} },
+                        try self.getParentContext().allocator.dupeZ(u8, name),
+                        Imgui.windowFlagsNone,
+                        .popup,
+                    ));
+                }
+            }
+        }
+
         if (Imgui.beginMenu(.{ "Tools", true })) {
             defer Imgui.endMenu();
             if (Imgui.menuItem(.{ "Hex Editor", null, false, true })) {
@@ -273,6 +342,7 @@ pub const ImguiContext = struct {
                     .{ .hex_editor = HexEditor.init() },
                     try self.makeWindowNameUnique("Hex Editor"),
                     Imgui.windowFlagsMenuBar,
+                    .window,
                 ));
             }
         }
@@ -287,6 +357,7 @@ pub const ImguiContext = struct {
             .{ .file_dialog = try FileDialog.init(self.getParentContext().allocator) },
             try self.getParentContext().allocator.dupeZ(u8, name),
             Imgui.windowFlagsNone,
+            .window,
         ));
     }
 };
@@ -298,16 +369,25 @@ const Window = struct {
 
     title: [:0]const u8,
     flags: Flags,
+    window_type: WindowType,
 
     closeable: bool = true,
     open: bool = true,
+    popup_opened: bool = false,
 
-    fn init(impl: WindowImpl, title: [:0]const u8, flags: Flags) Window {
+    const WindowType = enum {
+        window,
+        popup,
+        popup_modal,
+    };
+
+    fn init(impl: WindowImpl, title: [:0]const u8, flags: Flags, window_type: WindowType) Window {
         return Window{
             .impl = impl,
 
             .title = title,
             .flags = flags,
+            .window_type = window_type,
         };
     }
 
@@ -322,58 +402,97 @@ const Window = struct {
         }
 
         try self.impl.predraw(self, context);
-        defer Imgui.end();
-        if (self.closeable) {
-            var new_open: bool = self.open;
-            defer self.open = new_open;
-            if (Imgui.begin(.{ self.title, &new_open, self.flags })) {
-                if (new_open) {
-                    new_open = try self.impl.draw(self, context);
-                } else {
-                    try self.impl.onClosed(context);
-                    std.log.debug("Closed window: {s}", .{self.title});
+        switch (self.window_type) {
+            .window => {
+                defer Imgui.end();
+                if (self.closeable) {
+                    var new_open: bool = self.open;
+                    defer self.open = new_open;
+                    if (Imgui.begin(.{ self.title, &new_open, self.flags })) {
+                        if (new_open) {
+                            new_open = try self.impl.draw(self, context);
+                        }
+                        if (!new_open) {
+                            try self.impl.onClosed(context);
+                            std.log.debug("Closed window: {s}", .{self.title});
+                        }
+                    }
+                } else if (Imgui.begin(.{ self.title, null, self.flags })) {
+                    _ = try self.impl.draw(self, context);
                 }
-            }
-        } else if (Imgui.begin(.{ self.title, null, self.flags })) {
-            _ = try self.impl.draw(self, context);
+            },
+            .popup => {
+                if (!self.popup_opened) {
+                    Imgui.openPopup(.{ self.title, 0 });
+                    self.popup_opened = true;
+                }
+
+                if (Imgui.beginPopup(.{ self.title, self.flags })) {
+                    defer Imgui.endPopup();
+                    self.open = try self.impl.draw(self, context);
+                    if (!self.open) {
+                        try self.impl.onClosed(context);
+                        Imgui.closeCurrentPopup();
+                        std.log.debug("Closed popup: {s}", .{self.title});
+                    }
+                } else {
+                    self.open = false;
+                }
+            },
+            .popup_modal => @panic(".popup_modal not yet implemented"),
         }
     }
 };
 
 const WindowImpl = union(enum) {
+    sync_method_select: SyncMethodSelect,
+
     game_window: GameWindow,
-    file_dialog: FileDialog,
     hex_editor: HexEditor,
+
+    file_dialog: FileDialog,
 
     fn deinit(self: WindowImpl, _: *Allocator) void {
         switch (self) {
+            .sync_method_select => {},
+
             .game_window => {},
-            .file_dialog => |x| x.deinit(),
             .hex_editor => {},
+
+            .file_dialog => |x| x.deinit(),
         }
     }
 
     fn predraw(self: *WindowImpl, _: *Window, _: *ImguiContext) !void {
         switch (self.*) {
+            .sync_method_select => {},
+
             .game_window => {},
-            .file_dialog => {},
             .hex_editor => |*x| try x.predraw(),
+
+            .file_dialog => {},
         }
     }
 
     fn draw(self: *WindowImpl, _: *Window, context: *ImguiContext) !bool {
         switch (self.*) {
+            .sync_method_select => |*x| return x.draw(),
+
             .game_window => |x| return x.draw(context.*),
-            .file_dialog => |*x| return x.draw(context),
             .hex_editor => |*x| return x.draw(context),
+
+            .file_dialog => |*x| return x.draw(context),
         }
     }
 
-    fn onClosed(self: *WindowImpl, _: *ImguiContext) !void {
+    fn onClosed(self: *WindowImpl, context: *ImguiContext) !void {
         switch (self.*) {
+            .sync_method_select => |x| return x.onClosed(context),
+
             .game_window => {},
-            .file_dialog => {},
             .hex_editor => {},
+
+            .file_dialog => {},
         }
     }
 };
@@ -403,5 +522,32 @@ const GameWindow = struct {
         });
 
         return true;
+    }
+};
+
+const SyncMethodSelect = struct {
+    sync_method: ?ImguiContext.SyncMethod = null,
+
+    fn draw(self: *SyncMethodSelect) !bool {
+        inline for (.{
+            .{ .label = "No Sync", .method = .no_sync },
+            .{ .label = "Sync To Console", .method = .sync_to_console },
+            .{ .label = "Sync To Display", .method = .sync_to_display },
+        }) |selectable_info| {
+            if (Imgui.selectable(.{ selectable_info.label, false, 0, .{ .x = 0, .y = 0 } })) {
+                self.sync_method = selectable_info.method;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    fn onClosed(self: SyncMethodSelect, context: *ImguiContext) void {
+        if (self.sync_method) |method| {
+            context.sync_method = method;
+            std.log.debug("Set sync method to {}", .{method});
+        } else {
+            std.log.err("Sync Method Select popup decided to close without a selection", .{});
+        }
     }
 };
