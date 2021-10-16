@@ -14,13 +14,31 @@ const Console = @TypeOf(@as(ImguiContext, undefined).console.*);
 const MapperState = @import("../../mapper.zig").MapperState;
 
 pub const Debugger = struct {
-    //instructions: [0x4000]InstructionFormatter,
+    // TODO: strongly consider allocating one big text pool and taking from that
+    // instead of having heap allocated memory strewn about
+    formatters: []InstructionFormatter,
+    last_formatter: usize = 0,
 
-    pub fn init() Debugger {
-        return Debugger{};
+    last_update_cycle: usize = 0,
+
+    pub fn init(allocator: *Allocator) !Debugger {
+        const formatters = try allocator.alloc(InstructionFormatter, 0x8000);
+        for (formatters) |*formatter| {
+            formatter.* = try InstructionFormatter.init(allocator);
+        }
+        return Debugger{
+            .formatters = formatters,
+        };
     }
 
-    pub fn draw(self: Debugger, context: *ImguiContext) !bool {
+    pub fn deinit(self: Debugger, allocator: *Allocator) void {
+        for (self.formatters) |formatter| {
+            formatter.deinit();
+        }
+        allocator.free(self.formatters);
+    }
+
+    pub fn draw(self: *Debugger, context: ImguiContext) !bool {
         if (!context.console.cart.rom_loaded) {
             return true;
         }
@@ -30,19 +48,48 @@ pub const Debugger = struct {
         return true;
     }
 
-    fn drawInstructionList(_: Debugger, context: *ImguiContext) !void {
-        const parent_context = context.getParentContext();
+    fn updateInstructionFormatters(self: *Debugger, context: ImguiContext) !void {
+        var decoder = InstructionDecoder.init(context.console, 0x8000);
+        var redo_rest = false;
+        for (self.formatters) |*formatter, i| {
+            const prev_address = decoder.address;
+
+            if (redo_rest or
+                formatter.instruction == null or
+                formatter.instruction.?.bytes[0] != decoder.nextOpcode())
+            {
+                formatter.instruction = decoder.step();
+                try formatter.update(context.console, true);
+                redo_rest = true;
+            } else if (formatter.instruction) |instruction| {
+                decoder.address +%= instruction.size;
+                try formatter.update(context.console, false);
+            }
+
+            if (prev_address > decoder.address) {
+                self.last_formatter = i;
+                break;
+            }
+        }
+    }
+
+    fn drawInstructionList(self: *Debugger, context: ImguiContext) !void {
+        if (context.paused and self.last_update_cycle != context.console.cpu.cycles) {
+            try self.updateInstructionFormatters(context);
+            self.last_update_cycle = context.console.cpu.cycles;
+        }
 
         defer Imgui.endChild();
         if (Imgui.beginChild(.{ "Instruction List", .{ .x = 0, .y = 0 }, false, Imgui.windowFlagsNone })) {
-            var decoder = InstructionDecoder.init(context.console);
-            var i: usize = 0;
-            while (i < 100) : (i += 1) {
-                var formatter = InstructionFormatter.init(parent_context.allocator, decoder.step());
-                defer formatter.deinit();
+            var clipper = try Imgui.listClipperInit();
+            defer Imgui.listClipperDeinit(.{clipper});
 
-                try formatter.update(context.console);
-                Imgui.text(formatter.string.getSliceNull());
+            Imgui.listClipperBegin(.{ clipper, @intCast(c_int, self.last_formatter), -1.0 });
+            while (Imgui.listClipperStep(.{clipper})) {
+                var i = @intCast(usize, clipper.DisplayStart);
+                while (i < clipper.DisplayEnd) : (i += 1) {
+                    Imgui.text(self.formatters[i].string.getSliceNull());
+                }
             }
         }
     }
@@ -50,12 +97,11 @@ pub const Debugger = struct {
 
 const InstructionFormatter = struct {
     string: util.StringBuilder,
-    instruction: Instruction,
+    instruction: ?Instruction = null,
 
-    fn init(allocator: *Allocator, instruction: Instruction) InstructionFormatter {
+    fn init(allocator: *Allocator) !InstructionFormatter {
         return InstructionFormatter{
-            .string = util.StringBuilder.init(allocator),
-            .instruction = instruction,
+            .string = try util.StringBuilder.initCapacity(allocator, 128),
         };
     }
 
@@ -63,12 +109,17 @@ const InstructionFormatter = struct {
         self.string.deinit();
     }
 
-    fn update(self: *InstructionFormatter, console: *Console) !void {
-        var prev = self.instruction;
-        self.instruction.update(console);
+    fn update(self: *InstructionFormatter, console: *Console, force_update: bool) !void {
+        if (self.instruction == null) {
+            @panic("InstructionFormatter has no instruction");
+        }
+
+        const prev = self.instruction.?;
+        const instruction = &self.instruction.?;
+        instruction.update(console);
 
         // TODO: maybe use a better scheme to check if should make a new string
-        if (self.string.getSlice().len > 0 and std.meta.eql(prev, self.instruction)) {
+        if (self.string.getSlice().len > 0 and std.meta.eql(prev, instruction.*) and !force_update) {
             return;
         }
 
@@ -80,24 +131,24 @@ const InstructionFormatter = struct {
         self.string.reset();
         const writer = self.string.writer();
         try std.fmt.format(writer, "{x:0>2}:{x:0>4}: ", .{
-            self.instruction.rom_bank,
-            self.instruction.mapped_address,
+            instruction.rom_bank,
+            instruction.mapped_address,
         });
 
-        for (self.instruction.bytes[0..self.instruction.size]) |b| {
+        for (instruction.bytes[0..instruction.size]) |b| {
             try std.fmt.format(writer, "{x:0>2} ", .{b});
         }
 
         try self.alignSpacing(mnemonics_pos);
 
-        if (self.instruction.operands == .undocumented) {
+        if (instruction.operands == .undocumented) {
             try std.fmt.format(writer, "ILL\x00", .{});
             return;
         } else {
-            try std.fmt.format(writer, "{s}", .{instruction_.opToString(self.instruction.op)});
+            try std.fmt.format(writer, "{s}", .{instruction_.opToString(instruction.op)});
         }
 
-        switch (self.instruction.operands) {
+        switch (instruction.operands) {
             .undocumented => unreachable,
 
             .implied => {},
@@ -388,16 +439,26 @@ const InstructionDecoder = struct {
     address: u16,
     mapper_state: MapperState,
 
-    fn init(console: *Console) InstructionDecoder {
+    fn init(console: *Console, address: u16) InstructionDecoder {
         return InstructionDecoder{
             .console = console,
-            .address = console.cpu.reg.pc,
+            .address = address,
             .mapper_state = console.cart.getMapperState(),
         };
     }
 
+    fn bytesToBankBoundary(self: InstructionDecoder) usize {
+        const addr_in_bank = @truncate(u15, self.address) & self.mapper_state.prg_rom_bank_size;
+        return self.mapper_state.prg_rom_bank_size - addr_in_bank;
+    }
+
     fn getCurrentRomBank(self: InstructionDecoder) usize {
-        return @divTrunc(self.address & 0x7fff, self.mapper_state.prg_rom_bank_size);
+        const selected = @truncate(u15, self.address) >> self.mapper_state.prg_rom_bank_bits;
+        return self.mapper_state.prg_rom_selected_banks[selected] >> self.mapper_state.prg_rom_bank_bits;
+    }
+
+    fn nextOpcode(self: InstructionDecoder) u8 {
+        return self.console.cpu.mem.peek(self.address);
     }
 
     fn step(self: *InstructionDecoder) Instruction {
@@ -486,9 +547,10 @@ const InstructionDecoder = struct {
             }
         };
 
-        const instruction_size = if (opcode == 0x00)
-            2
-        else switch (operands) {
+        const instruction_size = //if (opcode == 0x00)
+            // 2
+            //else
+            switch (operands) {
             .undocumented => 1,
 
             .implied => 1,
@@ -504,9 +566,7 @@ const InstructionDecoder = struct {
             .ret => 1,
         };
 
-        self.address +%= instruction_size;
-
-        return Instruction{
+        const result = Instruction{
             .rom_bank = self.getCurrentRomBank(),
             .mapped_address = self.address,
             .bytes = [3]u8{ opcode, byte1, byte2 },
@@ -515,5 +575,9 @@ const InstructionDecoder = struct {
             .op = instruction.op,
             .operands = operands,
         };
+
+        self.address +%= instruction_size;
+
+        return result;
     }
 };

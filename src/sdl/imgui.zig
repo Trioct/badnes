@@ -333,7 +333,7 @@ pub const ImguiContext = struct {
             defer Imgui.endMenu();
             if (Imgui.menuItem(.{ "Debugger", null, false, true })) {
                 try self.addWindow(Window.init(
-                    .{ .debugger = Debugger.init() },
+                    .{ .debugger = try Debugger.init(self.getParentContext().allocator) },
                     try self.makeWindowNameUnique("Debugger"),
                     Imgui.windowFlagsNone,
                     .{ .window = .{} },
@@ -482,11 +482,11 @@ const WindowImpl = union(enum) {
 
     file_dialog: FileDialog,
 
-    fn deinit(self: WindowImpl, _: *Allocator) void {
+    fn deinit(self: WindowImpl, allocator: *Allocator) void {
         switch (self) {
             .game_window => {},
             .hex_editor => {},
-            .debugger => {},
+            .debugger => |x| x.deinit(allocator),
 
             .file_dialog => |x| x.deinit(),
         }
@@ -506,7 +506,7 @@ const WindowImpl = union(enum) {
         switch (self.*) {
             .game_window => |x| return x.draw(context.*),
             .hex_editor => |*x| return x.draw(context),
-            .debugger => |x| return x.draw(context),
+            .debugger => |*x| return x.draw(context.*),
 
             .file_dialog => |*x| return x.draw(context),
         }

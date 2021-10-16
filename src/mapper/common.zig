@@ -20,7 +20,8 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
 
     return struct {
         const Self = @This();
-        const size: usize = size;
+        const bank_size: usize = size;
+        const bank_bits: usize = bank_bits;
         const selectable_banks: usize = selectable_banks;
 
         bytes: []u8,
@@ -177,7 +178,8 @@ pub fn getState(
             const self = fromGeneric(Self, config, generic);
             const prgs = &@field(self, prg_bank_switcher);
             return MapperState{
-                .prg_rom_bank_size = @TypeOf(prgs.*).size,
+                .prg_rom_bank_size = @TypeOf(prgs.*).bank_size,
+                .prg_rom_bank_bits = @TypeOf(prgs.*).bank_bits,
                 .prg_rom_selected_banks = &prgs.selected,
             };
         }

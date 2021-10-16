@@ -26,6 +26,7 @@ fn MapperInitFnSafe(comptime T: type, comptime config: Config) type {
 // currently used for debugging stuff in imgui
 pub const MapperState = struct {
     prg_rom_bank_size: usize,
+    prg_rom_bank_bits: u4,
     prg_rom_selected_banks: []usize,
 };
 
