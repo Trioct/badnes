@@ -219,6 +219,7 @@ pub const ImguiContext = struct {
                     while (!ppu.present_frame) {
                         cpu.runStep();
                     }
+                    cpu.runUntilNextInstruction();
                     ppu.present_frame = false;
                     try self.draw();
                     console_frames += 1;
@@ -235,6 +236,7 @@ pub const ImguiContext = struct {
                         ppu.present_frame = false;
                         console_frames += 1;
                     }
+                    cpu.runUntilNextInstruction();
                     total_time += check_result.ns_passed;
                     try self.draw();
                     gui_frames += 1;
@@ -247,6 +249,7 @@ pub const ImguiContext = struct {
                     while (i < 5000) : (i += 1) {
                         cpu.runStep();
                     }
+                    cpu.runUntilNextInstruction();
                     if (ppu.present_frame) {
                         ppu.present_frame = false;
                         try self.draw();

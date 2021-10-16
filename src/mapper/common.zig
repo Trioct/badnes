@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const Mirroring = @import("../ines.zig").Mirroring;
 const Config = @import("../console.zig").Config;
 const GenericMapper = @import("../mapper.zig").GenericMapper;
+const MapperState = @import("../mapper.zig").MapperState;
 
 pub const Prgs = BankSwitcher(0x4000, 2);
 pub const Chrs = BankSwitcher(0x1000, 2);
@@ -19,6 +20,8 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
 
     return struct {
         const Self = @This();
+        const size: usize = size;
+        const selectable_banks: usize = selectable_banks;
 
         bytes: []u8,
         writable: bool,
@@ -159,14 +162,32 @@ pub const PrgRam = struct {
     }
 };
 
+pub fn fromGeneric(comptime Self: type, comptime config: Config, generic: GenericMapper(config)) *Self {
+    return @ptrCast(*Self, generic.mapper_ptr);
+}
+
+// TODO: redo when they make this api better
+pub fn getState(
+    comptime Self: type,
+    comptime config: Config,
+    comptime prg_bank_switcher: []const u8,
+) fn (GenericMapper(config)) MapperState {
+    return (struct {
+        fn f(generic: GenericMapper(config)) MapperState {
+            const self = fromGeneric(Self, config, generic);
+            const prgs = &@field(self, prg_bank_switcher);
+            return MapperState{
+                .prg_rom_bank_size = @TypeOf(prgs.*).size,
+                .prg_rom_selected_banks = &prgs.selected,
+            };
+        }
+    }).f;
+}
+
 pub fn mirrorNametable(mirroring: Mirroring, addr: u16) u12 {
     return switch (mirroring) {
         .horizontal => @truncate(u12, addr & 0xbff),
         .vertical => @truncate(u12, addr & 0x7ff),
         .four_screen => @truncate(u12, addr),
     };
-}
-
-pub fn fromGeneric(comptime Self: type, comptime config: Config, generic: GenericMapper(config)) *Self {
-    return @ptrCast(*Self, generic.mapper_ptr);
 }

@@ -431,7 +431,7 @@ fn MergedEnum(comptime T1: type, comptime T2: type) type {
 
 pub fn opToString(op: anytype) []const u8 {
     const enum_strs = comptime blk: {
-        const enum_fields = @typeInfo(@TypeOf(op)).Enum.fields;
+        const enum_fields = std.meta.fields(@TypeOf(op));
         var arr = [_]([3]u8){undefined} ** enum_fields.len;
         for (arr) |*idx, i| {
             _ = std.ascii.upperString(idx[0..], enum_fields[i].name[3..]);
@@ -441,22 +441,26 @@ pub fn opToString(op: anytype) []const u8 {
     return enum_strs[@enumToInt(op)][0..];
 }
 
+pub fn opIsDocumented(op: anytype) bool {
+    return @enumToInt(op) < comptime std.meta.fields(Documented).len;
+}
+
+// zig fmt: off
+const Documented = enum {
+    op_adc, op_and, op_asl, op_bpl, op_bmi, op_bvc, op_bvs, op_bcc,
+    op_bcs, op_bne, op_beq, op_bit, op_brk, op_clc, op_cld, op_cli,
+    op_clv, op_cmp, op_cpx, op_cpy, op_dec, op_dex, op_dey, op_eor,
+    op_inc, op_inx, op_iny, op_jmp, op_jsr, op_lda, op_ldx, op_ldy,
+    op_lsr, op_nop, op_ora, op_pha, op_php, op_pla, op_plp, op_rol,
+    op_ror, op_rti, op_rts, op_sbc, op_sec, op_sed, op_sei, op_sta,
+    op_stx, op_sty, op_tax, op_tay, op_tsx, op_txa, op_txs, op_tya,
+};
+// zig fmt: on
+
 pub fn Op(comptime precision: Precision) type {
     const Ill = enum {
         op_ill,
     };
-
-    // zig fmt: off
-    const Documented = enum {
-        op_adc, op_and, op_asl, op_bpl, op_bmi, op_bvc, op_bvs, op_bcc,
-        op_bcs, op_bne, op_beq, op_bit, op_brk, op_clc, op_cld, op_cli,
-        op_clv, op_cmp, op_cpx, op_cpy, op_dec, op_dex, op_dey, op_eor,
-        op_inc, op_inx, op_iny, op_jmp, op_jsr, op_lda, op_ldx, op_ldy,
-        op_lsr, op_nop, op_ora, op_pha, op_php, op_pla, op_plp, op_rol,
-        op_ror, op_rti, op_rts, op_sbc, op_sec, op_sed, op_sei, op_sta,
-        op_stx, op_sty, op_tax, op_tay, op_tsx, op_txa, op_txs, op_tya,
-    };
-    // zig fmt: on
 
     const Undocumented = enum {
         /// SAH, SHA
@@ -494,7 +498,40 @@ pub fn Op(comptime precision: Precision) type {
     };
 
     switch (precision) {
-        .fast => return MergedEnum(Ill, Documented),
+        .fast => return MergedEnum(Documented, Ill),
         .accurate => return MergedEnum(Documented, Undocumented),
     }
+}
+
+const testing = std.testing;
+const expect = testing.expect;
+
+test "opIsDocumented" {
+    var i: usize = undefined;
+
+    i = 0;
+    while (i < std.meta.fields(Documented).len) : (i += 1) {
+        try expect(opIsDocumented(@intToEnum(Documented, i)));
+    }
+
+    i = 0;
+    while (i < std.meta.fields(Documented).len) : (i += 1) {
+        try expect(opIsDocumented(@intToEnum(Op(.fast), i)));
+    }
+    try expect(!opIsDocumented(Op(.fast).op_ill));
+
+    i = 0;
+    while (i < std.meta.fields(Documented).len) : (i += 1) {
+        try expect(opIsDocumented(@intToEnum(Op(.accurate), i)));
+    }
+    while (i < std.meta.fields(Op(.accurate)).len) : (i += 1) {
+        try expect(!opIsDocumented(@intToEnum(Op(.accurate), i)));
+    }
+
+    try expect(opIsDocumented(Op(.fast).op_sbc));
+    try expect(opIsDocumented(Op(.fast).op_lda));
+
+    try expect(opIsDocumented(Op(.accurate).op_sbc));
+    try expect(opIsDocumented(Op(.accurate).op_lda));
+    try expect(!opIsDocumented(Op(.accurate).op_slo));
 }

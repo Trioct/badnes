@@ -131,6 +131,8 @@ pub fn Cpu(comptime config: Config) type {
             }
         };
 
+        pub const runUntilNextInstruction = runStep;
+
         /// Runs an instruction
         pub fn runStep(self: *Self) void {
             const opcode = self.mem.read(self.reg.pc);

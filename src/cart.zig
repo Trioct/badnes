@@ -1,9 +1,12 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const build_options = @import("build_options");
+
 const ines = @import("ines.zig");
 const mapper = @import("mapper.zig");
 const GenericMapper = mapper.GenericMapper;
+const MapperState = mapper.MapperState;
 
 const console_ = @import("console.zig");
 const Config = console_.Config;
@@ -45,6 +48,12 @@ pub fn Cart(comptime config: Config) type {
             self.rom_loaded = true;
             info.prg_rom = null;
             info.chr_rom = null;
+        }
+
+        pub inline fn getMapperState(self: Self) if (build_options.imgui) MapperState else void {
+            if (build_options.imgui) {
+                return self.mapper.getStateFn(self.mapper);
+            }
         }
 
         pub inline fn cpuCycled(self: *Self) void {

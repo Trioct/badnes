@@ -3,11 +3,15 @@ const builtin = std.builtin;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
+const build_options = @import("build_options");
+
 const ines = @import("ines.zig");
 
 const console_ = @import("console.zig");
 const Config = console_.Config;
 const Console = console_.Console;
+
+const common = @import("mapper/common.zig");
 
 /// Avoids recursion in GenericMapper
 fn MapperInitFn(comptime config: Config) type {
@@ -18,6 +22,13 @@ fn MapperInitFnSafe(comptime T: type, comptime config: Config) type {
     return fn (*Allocator, *Console(config), *ines.RomInfo) Allocator.Error!?T;
 }
 
+// Not sure exactly how I want to structure this
+// currently used for debugging stuff in imgui
+pub const MapperState = struct {
+    prg_rom_bank_size: usize,
+    prg_rom_selected_banks: []usize,
+};
+
 pub fn GenericMapper(comptime config: Config) type {
     return struct {
         const Self = @This();
@@ -25,6 +36,8 @@ pub fn GenericMapper(comptime config: Config) type {
         mapper_ptr: OpaquePtr,
 
         deinitFn: fn (Self, *Allocator) void,
+
+        getStateFn: if (build_options.imgui) fn (Self) MapperState else void,
 
         cpuCycledFn: ?(fn (*Self) void),
         mirrorNametableFn: fn (Self, u16) u12,
@@ -38,7 +51,6 @@ pub fn GenericMapper(comptime config: Config) type {
         const OpaquePtr = *align(@alignOf(usize)) opaque {};
 
         fn setup(comptime T: type) MapperInitFnSafe(Self, config) {
-            //Self.validateMapper(T);
             return (struct {
                 pub fn init(
                     allocator: *Allocator,
@@ -49,12 +61,28 @@ pub fn GenericMapper(comptime config: Config) type {
                         return null;
                     }
 
+                    const getStateFn = blk: {
+                        if (build_options.imgui) {
+                            if (@hasDecl(T, "getState")) {
+                                break :blk T.getState;
+                            } else if (@hasField(T, "prgs")) {
+                                break :blk common.getState(T, config, "prgs");
+                            } else {
+                                @compileError("Imgui needs getState function in mapper, or proper field names for default function");
+                            }
+                        } else {
+                            break :blk undefined;
+                        }
+                    };
+
                     const ptr = try allocator.create(T);
                     try T.initMem(ptr, allocator, console, info);
                     return Self{
                         .mapper_ptr = @ptrCast(OpaquePtr, ptr),
 
                         .deinitFn = T.deinitMem,
+
+                        .getStateFn = getStateFn,
 
                         .cpuCycledFn = if (@hasDecl(T, "cpuCycled")) T.cpuCycled else null,
                         .mirrorNametableFn = T.mirrorNametable,

@@ -125,6 +125,13 @@ pub fn Cpu(comptime config: Config) type {
             self.reg.s -%= 1;
         }
 
+        /// Runs until no longer mid instruction
+        pub fn runUntilNextInstruction(self: *Self) void {
+            while (self.state.cycle != 0) {
+                self.runStep();
+            }
+        }
+
         fn cycleSideEffects(self: *Self) void {
             common.cpuCycled(self);
             self.state.cycle +%= 1;

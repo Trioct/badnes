@@ -10,33 +10,41 @@ const Imgui = @import("../bindings.zig").Imgui;
 const ImguiContext = @import("../imgui.zig").ImguiContext;
 const util = @import("util.zig");
 
-const Console = @TypeOf(@as(ImguiContext, undefined).console);
+const Console = @TypeOf(@as(ImguiContext, undefined).console.*);
+const MapperState = @import("../../mapper.zig").MapperState;
 
 pub const Debugger = struct {
+    //instructions: [0x4000]InstructionFormatter,
+
     pub fn init() Debugger {
         return Debugger{};
     }
 
     pub fn draw(self: Debugger, context: *ImguiContext) !bool {
-        _ = self;
         if (!context.console.cart.rom_loaded) {
             return true;
         }
 
-        var decoder = InstructionDecoder.init(0x8000);
-
-        const parent_context = context.getParentContext();
-
-        var i: usize = 0;
-        while (i < 100) : (i += 1) {
-            var formatter = InstructionFormatter.init(parent_context.allocator, decoder.step(context.console));
-            defer formatter.deinit();
-
-            try formatter.update(context.console);
-            Imgui.text(formatter.string.getSliceNull());
-        }
+        try self.drawInstructionList(context);
 
         return true;
+    }
+
+    fn drawInstructionList(_: Debugger, context: *ImguiContext) !void {
+        const parent_context = context.getParentContext();
+
+        defer Imgui.endChild();
+        if (Imgui.beginChild(.{ "Instruction List", .{ .x = 0, .y = 0 }, false, Imgui.windowFlagsNone })) {
+            var decoder = InstructionDecoder.init(context.console);
+            var i: usize = 0;
+            while (i < 100) : (i += 1) {
+                var formatter = InstructionFormatter.init(parent_context.allocator, decoder.step());
+                defer formatter.deinit();
+
+                try formatter.update(context.console);
+                Imgui.text(formatter.string.getSliceNull());
+            }
+        }
     }
 };
 
@@ -55,7 +63,7 @@ const InstructionFormatter = struct {
         self.string.deinit();
     }
 
-    fn update(self: *InstructionFormatter, console: Console) !void {
+    fn update(self: *InstructionFormatter, console: *Console) !void {
         var prev = self.instruction;
         self.instruction.update(console);
 
@@ -64,15 +72,136 @@ const InstructionFormatter = struct {
             return;
         }
 
+        // these positions all assume the longest possible string length
+        const bytes_pos = "MM:AAAA: ".len;
+        const mnemonics_pos = bytes_pos + "BB BB BB     ".len;
+        const comments_pos = mnemonics_pos + "III $AAAA,I[#$OO] ".len;
+
         self.string.reset();
-        try std.fmt.format(self.string.writer(), "{}", .{self.instruction});
+        const writer = self.string.writer();
+        try std.fmt.format(writer, "{x:0>2}:{x:0>4}: ", .{
+            self.instruction.rom_bank,
+            self.instruction.mapped_address,
+        });
+
+        for (self.instruction.bytes[0..self.instruction.size]) |b| {
+            try std.fmt.format(writer, "{x:0>2} ", .{b});
+        }
+
+        try self.alignSpacing(mnemonics_pos);
+
+        if (self.instruction.operands == .undocumented) {
+            try std.fmt.format(writer, "ILL\x00", .{});
+            return;
+        } else {
+            try std.fmt.format(writer, "{s}", .{instruction_.opToString(self.instruction.op)});
+        }
+
+        switch (self.instruction.operands) {
+            .undocumented => unreachable,
+
+            .implied => {},
+            .immediate => |x| try std.fmt.format(writer, " #${x:0>2}", .{x}),
+            .jump_direct => |x| try std.fmt.format(writer, " ${x:0>4}", .{x}),
+
+            .accumulator => |x| try std.fmt.format(writer, " A[#${x:0>2}]", .{x}),
+            .zero_page => |x| {
+                try std.fmt.format(writer, " ${x:0>2}", .{x.address});
+                if (x.index) |register| {
+                    try writer.writeByte(',');
+                    try self.formatRegister(register, x.index_value);
+                }
+                try self.alignSpacing(comments_pos);
+                try std.fmt.format(writer, "; ", .{});
+                try self.formatPointer(u8, x.effective_address, x.value);
+            },
+            .absolute => |x| {
+                try std.fmt.format(writer, " ${x:0>4}", .{x.address});
+                if (x.index) |register| {
+                    try writer.writeByte(',');
+                    try self.formatRegister(register, x.index_value);
+                }
+                try self.alignSpacing(comments_pos);
+                try std.fmt.format(writer, "; ", .{});
+                try self.formatPointer(u8, x.effective_address, x.value);
+            },
+            .relative => |x| {
+                try std.fmt.format(writer, " ${x:0>2}[${x:0>4}]", .{ @bitCast(u8, x.offset), x.jump_address });
+                try self.alignSpacing(comments_pos);
+
+                // TODO: prefix variable avoids miscompile :/
+                // https://github.com/ziglang/zig/issues/5230
+                const prefix = if (x.condition.not) "!" else "";
+                try std.fmt.format(writer, "; {s}{s} -> {}", .{
+                    prefix,
+                    @tagName(x.condition.flag),
+                    x.will_jump,
+                });
+            },
+            .indirect_x => |x| {
+                try std.fmt.format(writer, " (${x:0>2},X)", .{x.address});
+                try self.alignSpacing(comments_pos);
+                try std.fmt.format(writer, "; ", .{});
+                try self.formatPointer(u8, x.effective_address, x.value);
+            },
+            .indirect_y => |x| {
+                try std.fmt.format(writer, " (${x:0>2}),Y", .{x.address});
+                try self.alignSpacing(comments_pos);
+                try std.fmt.format(writer, "; ", .{});
+                try self.formatPointer(u8, x.effective_address, x.value);
+            },
+            .jump_indirect => |x| {
+                try std.fmt.format(writer, " (${x:0>4})", .{x.address});
+                try self.alignSpacing(comments_pos);
+                try std.fmt.format(writer, "; ${x:0>4}", .{x.effective_address});
+            },
+            .ret => |x| {
+                try self.alignSpacing(comments_pos);
+                try std.fmt.format(writer, "; ${x:0>4}", .{x.return_address});
+            },
+        }
 
         try self.string.nullTerminate();
+    }
+
+    /// Prints spaces until the string builder length is line_length
+    fn alignSpacing(self: *InstructionFormatter, line_length: usize) !void {
+        const str_len = self.string.getSlice().len;
+        if (line_length < str_len) {
+            std.log.err("InstructionFormatter.alignSpacing: line_length ({}) < str_len ({})", .{
+                line_length,
+                str_len,
+            });
+            return;
+        }
+        return self.string.writer().writeByteNTimes(' ', line_length - str_len);
+    }
+
+    fn formatRegister(self: *InstructionFormatter, register: Instruction.Operands.Register, value: u8) !void {
+        return std.fmt.format(self.string.writer(), "{s}[#${x:0>2}]", .{ register.getString(), value });
+    }
+
+    fn formatPointer(
+        self: *InstructionFormatter,
+        comptime T: type,
+        address: u16,
+        value: T,
+    ) !void {
+        std.debug.assert(T == u8 or T == u16);
+
+        const nibble_count: u3 = @divExact(@typeInfo(T).Int.bits, 4);
+        const digit_char: u8 = @as(u8, '0') + nibble_count;
+        const format_str = "*(${x:0>4}) = {x:0>" ++ [1]u8{digit_char} ++ "}";
+        return std.fmt.format(self.string.writer(), format_str, .{ address, value });
     }
 };
 
 const Instruction = struct {
-    address: u16,
+    rom_bank: usize,
+    mapped_address: u16,
+    bytes: [3]u8,
+    size: u2,
+
     op: Op(.accurate),
     operands: Operands,
 
@@ -82,6 +211,8 @@ const Instruction = struct {
     /// All indirection following will be done at time decode,
     /// May require updating
     const Operands = union(enum) {
+        undocumented,
+
         // Initialized at start, constant
         implied,
         immediate: u8,
@@ -100,12 +231,20 @@ const Instruction = struct {
         const Register = enum {
             x,
             y,
+
+            fn getString(self: Register) []const u8 {
+                return switch (self) {
+                    .x => "X",
+                    .y => "Y",
+                };
+            }
         };
 
         const ZeroPage = struct {
             index: ?Register,
             address: u8,
 
+            index_value: u8 = undefined,
             effective_address: u8 = undefined,
             value: u8 = undefined,
         };
@@ -114,6 +253,7 @@ const Instruction = struct {
             index: ?Register,
             address: u16,
 
+            index_value: u8 = undefined,
             effective_address: u16 = undefined,
             value: u8 = undefined,
         };
@@ -124,6 +264,7 @@ const Instruction = struct {
                 not: bool,
             },
             offset: i8,
+            jump_address: u16,
 
             will_jump: bool = undefined,
             next_address: u16 = undefined,
@@ -157,12 +298,14 @@ const Instruction = struct {
         };
     };
 
-    fn update(self: *Instruction, console: Console) void {
+    fn update(self: *Instruction, console: *Console) void {
         const cpu = &console.cpu;
         const reg = &cpu.reg;
         const mem = &cpu.mem;
 
         switch (self.operands) {
+            .undocumented => {},
+
             .implied => {},
             .immediate => {},
             .jump_direct => {},
@@ -176,6 +319,7 @@ const Instruction = struct {
                     }
                 else
                     0;
+                x.index_value = index;
                 x.effective_address = x.address +% index;
                 x.value = mem.peek(x.effective_address);
             },
@@ -187,6 +331,7 @@ const Instruction = struct {
                     }
                 else
                     0;
+                x.index_value = index;
                 x.effective_address = x.address +% index;
                 x.value = mem.peek(x.effective_address);
             },
@@ -200,9 +345,9 @@ const Instruction = struct {
 
                 x.will_jump = flag_value != x.condition.not;
                 if (x.will_jump) {
-                    x.next_address = @bitCast(u16, @bitCast(i16, self.address) +% x.offset) +% 2;
+                    x.next_address = x.jump_address;
                 } else {
-                    x.next_address = self.address +% 2;
+                    x.next_address = self.mapped_address +% 2;
                 }
             },
             .indirect_x => |*x| {
@@ -239,24 +384,37 @@ const Instruction = struct {
 };
 
 const InstructionDecoder = struct {
-    addr: u16,
+    console: *Console,
+    address: u16,
+    mapper_state: MapperState,
 
-    fn init(addr: u16) InstructionDecoder {
+    fn init(console: *Console) InstructionDecoder {
         return InstructionDecoder{
-            .addr = addr,
+            .console = console,
+            .address = console.cpu.reg.pc,
+            .mapper_state = console.cart.getMapperState(),
         };
     }
 
-    fn step(self: *InstructionDecoder, console: Console) Instruction {
+    fn getCurrentRomBank(self: InstructionDecoder) usize {
+        return @divTrunc(self.address & 0x7fff, self.mapper_state.prg_rom_bank_size);
+    }
+
+    fn step(self: *InstructionDecoder) Instruction {
+        const console = self.console;
         const mem = &console.cpu.mem;
 
-        const opcode = mem.peek(self.addr);
-        const byte1 = mem.peek(self.addr +% 1);
-        const byte2 = mem.peek(self.addr +% 2);
+        const opcode = mem.peek(self.address);
+        const byte1 = mem.peek(self.address +% 1);
+        const byte2 = mem.peek(self.address +% 2);
 
         const instruction = RawInstruction(.accurate).decode(opcode);
 
         const operands: Instruction.Operands = blk: {
+            // TODO: make toggleable
+            if (!instruction_.opIsDocumented(instruction.op)) {
+                break :blk .{ .undocumented = .{} };
+            }
             switch (opcode) {
                 0x0a, 0x2a, 0x4a, 0x6a => break :blk .{ .accumulator = undefined },
                 0x00, 0x08, 0x28, 0x48, 0x68 => break :blk .{ .implied = .{} },
@@ -319,6 +477,7 @@ const InstructionDecoder = struct {
                     break :blk .{ .relative = .{
                         .condition = condition,
                         .offset = offset,
+                        .jump_address = @bitCast(u16, @bitCast(i16, self.address) +% offset) +% 2,
                     } };
                 },
                 .indirect_x => break :blk .{ .indirect_x = .{ .address = byte1 } },
@@ -327,31 +486,34 @@ const InstructionDecoder = struct {
             }
         };
 
-        var decoded = Instruction{
-            .address = self.addr,
+        const instruction_size = if (opcode == 0x00)
+            2
+        else switch (operands) {
+            .undocumented => 1,
+
+            .implied => 1,
+            .immediate => 2,
+            .jump_direct => 2,
+
+            .accumulator => @as(u2, 1),
+            .zero_page => 2,
+            .absolute => 3,
+            .relative => 2,
+            .indirect_x, .indirect_y => 2,
+            .jump_indirect => 3,
+            .ret => 1,
+        };
+
+        self.address +%= instruction_size;
+
+        return Instruction{
+            .rom_bank = self.getCurrentRomBank(),
+            .mapped_address = self.address,
+            .bytes = [3]u8{ opcode, byte1, byte2 },
+            .size = instruction_size,
+
             .op = instruction.op,
             .operands = operands,
         };
-        //decoded.update(console);
-
-        if (opcode == 0x00) {
-            self.addr += 2;
-        } else {
-            self.addr += switch (operands) {
-                .implied => 1,
-                .immediate => 2,
-                .jump_direct => 2,
-
-                .accumulator => @as(u2, 1),
-                .zero_page => 2,
-                .absolute => 3,
-                .relative => 2,
-                .indirect_x, .indirect_y => 2,
-                .jump_indirect => 3,
-                .ret => 1,
-            };
-        }
-
-        return decoded;
     }
 };
