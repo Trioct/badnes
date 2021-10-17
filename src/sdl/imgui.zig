@@ -83,9 +83,10 @@ pub const ImguiContext = struct {
     }
 
     pub fn deinit(self: *ImguiContext, allocator: *Allocator) void {
-        var values = self.windows.valueIterator();
-        while (values.next()) |window| {
-            window.deinit(allocator);
+        var entries = self.windows.iterator();
+        while (entries.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            entry.value_ptr.deinit(allocator);
         }
         self.windows.deinit();
         self.game_pixel_buffer.deinit(allocator);
@@ -104,10 +105,12 @@ pub const ImguiContext = struct {
     }
 
     // TODO: very inefficient, not my focus right now
+    /// Caller is responsible for freeing the returned string
     fn makeWindowNameUnique(self: *ImguiContext, comptime name: [:0]const u8) ![:0]const u8 {
+        const allocator = self.getParentContext().allocator;
         if (self.isWindowAvailable(name)) {
             const tag_str = comptime if (std.mem.indexOf(u8, name, "##") != null) "" else "##";
-            var str = util.StringBuilder.init(self.getParentContext().allocator);
+            var str = util.StringBuilder.init(allocator);
             defer str.deinit();
 
             var i: u16 = 0;
@@ -120,7 +123,7 @@ pub const ImguiContext = struct {
             }
             @panic("Someone really went and made 65535 instances of the same window");
         } else {
-            return name;
+            return allocator.dupeZ(u8, name);
         }
     }
 
@@ -130,10 +133,19 @@ pub const ImguiContext = struct {
             if (result.value_ptr.open) {
                 std.log.err("Overwriting window that's in use: {s}", .{window.title});
             }
-            result.value_ptr.deinit(self.getParentContext().allocator);
+
+            const allocator = self.getParentContext().allocator;
+            allocator.free(window.title);
+
+            // need to preserve the original title pointer/window key
+            const original_title_ptr = result.value_ptr.title;
+            result.value_ptr.deinit(allocator);
+            result.value_ptr.* = window;
+            result.value_ptr.title = original_title_ptr;
+        } else {
+            result.value_ptr.* = window;
         }
-        result.value_ptr.* = window;
-        std.log.debug("Added window: {s}", .{window.title});
+        std.log.debug("Added window: {s}", .{result.value_ptr.title});
     }
 
     pub fn getParentContext(self: *ImguiContext) *Context(.accurate, true) {
@@ -400,7 +412,6 @@ const Window = struct {
 
     fn deinit(self: Window, allocator: *Allocator) void {
         self.impl.deinit(allocator);
-        allocator.free(self.title);
     }
 
     fn draw(self: *Window, context: *ImguiContext) !void {
@@ -409,6 +420,7 @@ const Window = struct {
         }
 
         try self.impl.predraw(self, context);
+        defer self.impl.postdraw();
         switch (self.window_type) {
             .window => |window_options| {
                 defer Imgui.end();
@@ -496,7 +508,17 @@ const WindowImpl = union(enum) {
         switch (self.*) {
             .game_window => {},
             .hex_editor => |*x| try x.predraw(),
-            .debugger => {},
+            .debugger => |*x| x.predraw(),
+
+            .file_dialog => {},
+        }
+    }
+
+    fn postdraw(self: WindowImpl) void {
+        switch (self) {
+            .game_window => {},
+            .hex_editor => {},
+            .debugger => |x| x.postdraw(),
 
             .file_dialog => {},
         }
@@ -506,7 +528,7 @@ const WindowImpl = union(enum) {
         switch (self.*) {
             .game_window => |x| return x.draw(context.*),
             .hex_editor => |*x| return x.draw(context),
-            .debugger => |*x| return x.draw(context.*),
+            .debugger => |*x| return x.draw(context),
 
             .file_dialog => |*x| return x.draw(context),
         }

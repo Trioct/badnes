@@ -5,7 +5,9 @@ const instruction_ = @import("../../instruction.zig");
 const RawInstruction = instruction_.Instruction;
 const Op = instruction_.Op;
 
-const Imgui = @import("../bindings.zig").Imgui;
+const bindings = @import("../bindings.zig");
+const c = bindings.c;
+const Imgui = bindings.Imgui;
 
 const ImguiContext = @import("../imgui.zig").ImguiContext;
 const util = @import("util.zig");
@@ -14,12 +16,25 @@ const Console = @TypeOf(@as(ImguiContext, undefined).console.*);
 const MapperState = @import("../../mapper.zig").MapperState;
 
 pub const Debugger = struct {
+    layout: Layout = Layout{
+        .char_size = .{
+            .x = 0,
+            .y = 0,
+        },
+    },
+
     // TODO: strongly consider allocating one big text pool and taking from that
     // instead of having heap allocated memory strewn about
     formatters: []InstructionFormatter,
     last_formatter: usize = 0,
 
     last_update_cycle: usize = 0,
+    pc_index: ?usize = null,
+    follow_pc: bool = true,
+
+    const Layout = struct {
+        char_size: Imgui.Vec2,
+    };
 
     pub fn init(allocator: *Allocator) !Debugger {
         const formatters = try allocator.alloc(InstructionFormatter, 0x8000);
@@ -38,26 +53,108 @@ pub const Debugger = struct {
         allocator.free(self.formatters);
     }
 
-    pub fn draw(self: *Debugger, context: ImguiContext) !bool {
+    pub fn predraw(self: *Debugger) void {
+        self.layout.char_size = blk: {
+            var temp: Imgui.Vec2 = undefined;
+            Imgui.calcTextSize(.{ &temp, "0", null, false, -1 });
+            break :blk temp;
+        };
+
+        Imgui.pushStyleVarVec2(.{ c.ImGuiStyleVar_WindowPadding, .{ .x = 0, .y = 0 } });
+    }
+
+    pub fn postdraw(_: Debugger) void {
+        Imgui.popStyleVar(.{1});
+    }
+
+    pub fn draw(self: *Debugger, context: *ImguiContext) !bool {
         if (!context.console.cart.rom_loaded) {
             return true;
         }
 
-        try self.drawInstructionList(context);
+        try self.drawControlHeader(context);
+        try self.drawInstructionList(context.*);
 
         return true;
     }
 
+    fn drawControlHeader(self: Debugger, context: *ImguiContext) !void {
+        const style = try Imgui.getStyle();
+
+        const padding = 4;
+        const lines = 1;
+        const size = .{ .x = 0, .y = padding * 2 + self.layout.char_size.y * lines + style.ItemSpacing.y * (lines - 1) };
+
+        const menubar_color = try Imgui.getStyleColor(.{c.ImGuiCol_MenuBarBg});
+        Imgui.pushStyleColorVec4(.{ c.ImGuiCol_ChildBg, menubar_color.* });
+        defer Imgui.popStyleColor(.{1});
+
+        Imgui.pushStyleVarVec2(.{ c.ImGuiStyleVar_WindowPadding, .{ .x = padding, .y = padding } });
+        defer Imgui.popStyleVar(.{1});
+
+        defer Imgui.endChild();
+        if (Imgui.beginChild(.{
+            "Control Header",
+            size,
+            false,
+            Imgui.windowFlagsAlwaysUseWindowPadding,
+        })) {
+            Imgui.pushStyleVarVec2(.{ c.ImGuiStyleVar_FramePadding, .{ .x = 0, .y = 0 } });
+            defer Imgui.popStyleVar(.{1});
+
+            if (Imgui.button(.{ "Step Over", .{ .x = 0, .y = 0 } })) {
+                try context.pause();
+                context.console.cpu.runStep();
+                context.console.cpu.runUntilNextInstruction();
+            }
+
+            Imgui.sameLine(.{ 0, -1 });
+
+            var str = util.StringBuilder.init(context.getParentContext().allocator);
+            defer str.deinit();
+
+            try std.fmt.format(str.writer(), "PC: {x:0>4}\x00", .{context.console.cpu.reg.pc});
+            Imgui.text(str.getSliceNull());
+        }
+    }
+
+    // TODO: possible to merge this with drawInstructionList to only update
+    // to the end of the scrolled region
     fn updateInstructionFormatters(self: *Debugger, context: ImguiContext) !void {
+        const mapper_state = context.console.cart.getMapperState();
+        const pc = context.console.cpu.reg.pc;
+        self.pc_index = null;
+
         var decoder = InstructionDecoder.init(context.console, 0x8000);
         var redo_rest = false;
+        var next_is_realigned = false;
         for (self.formatters) |*formatter, i| {
-            const prev_address = decoder.address;
+            var prev_address = decoder.address;
+
+            if (decoder.address == pc) {
+                self.pc_index = i;
+            }
 
             if (redo_rest or
+                next_is_realigned or
                 formatter.instruction == null or
                 formatter.instruction.?.bytes[0] != decoder.nextOpcode())
             {
+                if (formatter.instruction) |instruction| {
+                    const realigned_address = instruction.mapped_address;
+                    const realigned_opcode = context.console.cpu.mem.peek(realigned_address);
+
+                    if (instruction.bytes[0] == realigned_opcode and formatter.is_realigned) {
+                        if (realigned_address == decoder.address) {
+                            formatter.is_realigned = false;
+                        } else {
+                            decoder.address = realigned_address;
+                            prev_address = decoder.address;
+                        }
+                    }
+                }
+                formatter.is_realigned = formatter.is_realigned or next_is_realigned;
+
                 formatter.instruction = decoder.step();
                 try formatter.update(context.console, true);
                 redo_rest = true;
@@ -70,17 +167,42 @@ pub const Debugger = struct {
                 self.last_formatter = i;
                 break;
             }
+
+            // realign to banks and pc, it's an ok solution for now
+            const prev_bank = @truncate(u15, prev_address) >> mapper_state.prg_rom_bank_bits;
+            const current_bank = @truncate(u15, decoder.address) >> mapper_state.prg_rom_bank_bits;
+            if (prev_bank != current_bank) {
+                decoder.address = 0x8000 | (@as(u16, current_bank) << mapper_state.prg_rom_bank_bits);
+            } else if (prev_address < pc and decoder.address > pc) {
+                decoder.address = pc;
+            } else {
+                next_is_realigned = false;
+                continue;
+            }
+
+            next_is_realigned = true;
         }
     }
 
     fn drawInstructionList(self: *Debugger, context: ImguiContext) !void {
-        if (context.paused and self.last_update_cycle != context.console.cpu.cycles) {
+        const state_changed = context.paused and self.last_update_cycle != context.console.cpu.cycles;
+        if (state_changed) {
             try self.updateInstructionFormatters(context);
             self.last_update_cycle = context.console.cpu.cycles;
         }
 
         defer Imgui.endChild();
         if (Imgui.beginChild(.{ "Instruction List", .{ .x = 0, .y = 0 }, false, Imgui.windowFlagsNone })) {
+            const pc = context.console.cpu.reg.pc;
+            if (state_changed and self.follow_pc) {
+                if (self.pc_index) |pc_index| {
+                    const style = try Imgui.getStyle();
+                    c.igSetScrollY_Float(@intToFloat(f32, pc_index) * (self.layout.char_size.y + style.ItemSpacing.y));
+                }
+            }
+
+            const draw_list = try Imgui.getWindowDrawList();
+
             var clipper = try Imgui.listClipperInit();
             defer Imgui.listClipperDeinit(.{clipper});
 
@@ -88,6 +210,36 @@ pub const Debugger = struct {
             while (Imgui.listClipperStep(.{clipper})) {
                 var i = @intCast(usize, clipper.DisplayStart);
                 while (i < clipper.DisplayEnd) : (i += 1) {
+                    const formatter = self.formatters[i];
+
+                    if (formatter.is_realigned) {
+                        c.igSeparator();
+                    }
+
+                    if (formatter.instruction) |instruction| {
+                        if (instruction.mapped_address == pc) {
+                            const cursor_pos = blk: {
+                                var temp: Imgui.Vec2 = undefined;
+                                Imgui.getCursorScreenPos(.{&temp});
+                                break :blk temp;
+                            };
+
+                            const window_width = Imgui.getWindowWidth();
+
+                            c.ImDrawList_AddRectFilled(
+                                draw_list,
+                                cursor_pos,
+                                .{
+                                    .x = cursor_pos.x + window_width,
+                                    .y = cursor_pos.y + self.layout.char_size.y,
+                                },
+                                0xffd05050,
+                                0,
+                                0,
+                            );
+                        }
+                    }
+
                     Imgui.text(self.formatters[i].string.getSliceNull());
                 }
             }
@@ -98,10 +250,11 @@ pub const Debugger = struct {
 const InstructionFormatter = struct {
     string: util.StringBuilder,
     instruction: ?Instruction = null,
+    is_realigned: bool = false,
 
     fn init(allocator: *Allocator) !InstructionFormatter {
         return InstructionFormatter{
-            .string = try util.StringBuilder.initCapacity(allocator, 128),
+            .string = try util.StringBuilder.initCapacity(allocator, 64),
         };
     }
 

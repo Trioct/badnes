@@ -16,7 +16,7 @@ pub const HexEditor = struct {
         .extra_spacing_every_8 = 1,
         .bytes_per_line = 16,
 
-        .digit_size = .{
+        .char_size = .{
             .x = 0,
             .y = 0,
         },
@@ -25,6 +25,15 @@ pub const HexEditor = struct {
 
     address_space: AddressSpace = .cpu,
     cell_selection: ?CellSelection = null,
+
+    const Layout = struct {
+        address_digits: usize,
+        extra_spacing_every_8: usize,
+        bytes_per_line: usize,
+
+        char_size: Imgui.Vec2,
+        window_width: f32,
+    };
 
     const CellSelection = struct {
         index: usize,
@@ -43,7 +52,7 @@ pub const HexEditor = struct {
     }
 
     pub fn predraw(self: *HexEditor) !void {
-        self.layout.digit_size = blk: {
+        self.layout.char_size = blk: {
             var temp: Imgui.Vec2 = undefined;
             Imgui.calcTextSize(.{ &temp, "0", null, false, -1 });
             break :blk temp;
@@ -51,9 +60,9 @@ pub const HexEditor = struct {
 
         const style = try Imgui.getStyle();
 
-        const address_width = @intToFloat(f32, self.layout.address_digits) * self.layout.digit_size.x;
-        const bytes_width = @intToFloat(f32, self.layout.bytes_per_line) * self.layout.digit_size.x * 3;
-        const spacing_width = @intToFloat(f32, self.layout.extra_spacing_every_8) * self.layout.digit_size.x;
+        const address_width = @intToFloat(f32, self.layout.address_digits) * self.layout.char_size.x;
+        const bytes_width = @intToFloat(f32, self.layout.bytes_per_line) * self.layout.char_size.x * 3;
+        const spacing_width = @intToFloat(f32, self.layout.extra_spacing_every_8) * self.layout.char_size.x;
         const decoration_width = style.ScrollbarSize + style.WindowPadding.x * 2;
         self.layout.window_width = address_width +
             @intToFloat(f32, ": ".len) +
@@ -96,7 +105,7 @@ pub const HexEditor = struct {
         const draw_list = try Imgui.getWindowDrawList();
 
         // TODO: make/search for issue
-        const this_avoids_a_miscompile = .{ .x = self.layout.digit_size.x, .y = 0 };
+        const this_avoids_a_miscompile = .{ .x = self.layout.char_size.x, .y = 0 };
         Imgui.pushStyleVarVec2(.{ c.ImGuiStyleVar_FramePadding, .{ .x = 0, .y = 0 } });
         Imgui.pushStyleVarVec2(.{ c.ImGuiStyleVar_ItemSpacing, this_avoids_a_miscompile });
         defer Imgui.popStyleVar(.{2});
@@ -113,7 +122,7 @@ pub const HexEditor = struct {
         var clipper = try Imgui.listClipperInit();
         defer Imgui.listClipperDeinit(.{clipper});
 
-        Imgui.listClipperBegin(.{ clipper, @intCast(c_int, self.getMaxAddr() / 16), self.layout.digit_size.y });
+        Imgui.listClipperBegin(.{ clipper, @intCast(c_int, self.getMaxAddr() / 16), self.layout.char_size.y });
 
         while (Imgui.listClipperStep(.{clipper})) {
             var i = @intCast(usize, clipper.DisplayStart * 16);
@@ -141,8 +150,8 @@ pub const HexEditor = struct {
                         draw_list,
                         cursor_pos,
                         .{
-                            .x = cursor_pos.x + self.layout.digit_size.x * 2,
-                            .y = cursor_pos.y + self.layout.digit_size.y,
+                            .x = cursor_pos.x + self.layout.char_size.x * 2,
+                            .y = cursor_pos.y + self.layout.char_size.y,
                         },
                         0xffd05050,
                         0,
@@ -158,7 +167,7 @@ pub const HexEditor = struct {
 
                 if (is_selected and self.cell_selection != null and self.cell_selection.?.editing) {
                     const selection = &self.cell_selection.?;
-                    Imgui.setNextItemWidth(.{self.layout.digit_size.x * 2});
+                    Imgui.setNextItemWidth(.{self.layout.char_size.x * 2});
 
                     const was_just_selected = selection.just_selected;
                     // TODO: why does the mouse getting released unfocus the inputText?
@@ -207,7 +216,7 @@ pub const HexEditor = struct {
 
                 if (i & 0xf != 0xf) {
                     const spacing = if (i & 0x7 == 0x7)
-                        @intToFloat(f32, self.layout.extra_spacing_every_8 + 1) * self.layout.digit_size.x
+                        @intToFloat(f32, self.layout.extra_spacing_every_8 + 1) * self.layout.char_size.x
                     else
                         -1;
                     Imgui.sameLine(.{ 0, spacing });
@@ -245,13 +254,4 @@ pub const HexEditor = struct {
             .oam => context.console.ppu.oam.primary[addr] = val,
         }
     }
-};
-
-const Layout = struct {
-    address_digits: usize,
-    extra_spacing_every_8: usize,
-    bytes_per_line: usize,
-
-    digit_size: Imgui.Vec2,
-    window_width: f32,
 };

@@ -87,6 +87,7 @@ pub const Imgui = struct {
     const bool_err = .{ .imgui = .{ .bool_to_error = true } };
 
     pub const Vec2 = c.ImVec2;
+    pub const Vec4 = c.ImVec4;
 
     pub const createContext = wrap(c.igCreateContext, empty_options);
     pub const sdl2InitForOpengl = wrap(c.ImGui_ImplSDL2_InitForOpenGL, bool_err);
@@ -103,9 +104,6 @@ pub const Imgui = struct {
     pub const render = wrap(c.igRender, empty_options);
     pub const opengl3RenderDrawData = wrap(c.ImGui_ImplOpenGL3_RenderDrawData, empty_options);
     pub const getDrawData = wrap(c.igGetDrawData, empty_options);
-
-    pub const getStyle = wrap(c.igGetStyle, empty_options);
-    pub const styleColorsDark = wrap(c.igStyleColorsDark, empty_options);
 
     pub const isWindowFocused = wrap(c.igIsWindowFocused, empty_options);
     pub const isMouseClicked = wrap(c.igIsMouseClicked, empty_options);
@@ -124,10 +122,21 @@ pub const Imgui = struct {
     pub const getCursorPos = wrap(c.igGetCursorPos, empty_options);
     pub const getCursorScreenPos = wrap(c.igGetCursorScreenPos, empty_options);
 
+    pub const getStyle = wrap(c.igGetStyle, empty_options);
+    pub const getStyleColor = wrap(c.igGetStyleColorVec4, empty_options);
+    pub const styleColorsDark = wrap(c.igStyleColorsDark, empty_options);
+
+    pub const pushStyleVarFloat = wrap(c.igPushStyleVar_Float, empty_options);
     pub const pushStyleVarVec2 = wrap(c.igPushStyleVar_Vec2, empty_options);
     pub const popStyleVar = wrap(c.igPopStyleVar, empty_options);
 
+    pub const pushStyleColorU32 = wrap(c.igPushStyleColor_U32, empty_options);
+    pub const pushStyleColorVec4 = wrap(c.igPushStyleColor_Vec4, empty_options);
+    pub const popStyleColor = wrap(c.igPopStyleColor, empty_options);
+
     pub const getWindowDrawList = wrap(c.igGetWindowDrawList, empty_options);
+    pub const getWindowWidth = wrap(c.igGetWindowWidth, empty_options);
+    pub const getWindowHeight = wrap(c.igGetWindowHeight, empty_options);
     pub const addRectFilled = wrap(c.ImDrawList_AddRectFilled, empty_options);
 
     pub const getTextLineHeight = wrap(c.igGetTextLineHeight, empty_options);
@@ -326,7 +335,11 @@ fn WrappedCallReturn(comptime T: type, comptime options: WrapOptions) type {
         },
         .Pointer => |pointer| switch (pointer.size) {
             .C => if (comptime options.manyPtrToSingle()) {
-                return CError!*pointer.child;
+                if (pointer.is_const) {
+                    return CError!*const pointer.child;
+                } else {
+                    return CError!*pointer.child;
+                }
             } else {
                 return T;
             },
@@ -421,7 +434,11 @@ fn wrapReturn(ret_val: anytype, comptime options: WrapOptions) WrappedCallReturn
         .Pointer => |pointer| switch (pointer.size) {
             .C => if (comptime options.manyPtrToSingle()) {
                 if (ret_val != 0) {
-                    return @ptrCast(*pointer.child, ret_val);
+                    if (pointer.is_const) {
+                        return @ptrCast(*const pointer.child, ret_val);
+                    } else {
+                        return @ptrCast(*pointer.child, ret_val);
+                    }
                 } else {
                     return errorFromOptions(options);
                 }
