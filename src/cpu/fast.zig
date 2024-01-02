@@ -48,8 +48,8 @@ pub fn Cpu(comptime config: Config) type {
             if (self.reg.getFlag("I")) {
                 return;
             }
-            self.pushStack(@truncate(u8, self.reg.pc >> 8));
-            self.pushStack(@truncate(u8, self.reg.pc));
+            self.pushStack(@truncate(self.reg.pc >> 8));
+            self.pushStack(@truncate(self.reg.pc));
             self.pushStack(self.reg.p | 0b0010_0000);
             self.reg.setFlag("I", true);
             self.reg.pc = self.mem.readWord(0xfffe);
@@ -58,8 +58,8 @@ pub fn Cpu(comptime config: Config) type {
         pub fn clearIrqSource(_: *Self, comptime _: []const u8) void {}
 
         pub fn setNmi(self: *Self) void {
-            self.pushStack(@truncate(u8, self.reg.pc >> 8));
-            self.pushStack(@truncate(u8, self.reg.pc));
+            self.pushStack(@truncate(self.reg.pc >> 8));
+            self.pushStack(@truncate(self.reg.pc));
             self.pushStack(self.reg.p | 0b0010_0000);
             self.reg.setFlag("I", true);
             self.reg.pc = self.mem.readWord(0xfffa);
@@ -69,8 +69,8 @@ pub fn Cpu(comptime config: Config) type {
             const oam_addr = self.ppu.reg.oam_addr;
             var i: usize = 0;
             while (i < 256) : (i += 1) {
-                const oam_i: u8 = oam_addr +% @truncate(u8, i);
-                self.ppu.mem.oam[oam_i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
+                const oam_i: u8 = oam_addr +% @as(u8, @truncate(i));
+                self.ppu.mem.oam[oam_i] = self.mem.read((@as(u16, addr_high) << 8) | @as(u8, @truncate(i)));
 
                 self.apu.runCycle();
                 self.ppu.runCycle();
@@ -96,8 +96,8 @@ pub fn Cpu(comptime config: Config) type {
         fn branchRelative(self: *Self, condition: bool, jump: u8) void {
             if (condition) {
                 const prev_pc = self.reg.pc;
-                self.reg.pc = @bitCast(u16, @bitCast(i16, self.reg.pc) +% @bitCast(i8, jump));
-                self.cycles += @as(usize, 1) + @boolToInt(self.reg.pc & 0xff00 != prev_pc & 0xff00);
+                self.reg.pc = @bitCast(@as(i16, @bitCast(self.reg.pc)) +% @as(i8, @bitCast(jump)));
+                self.cycles += @as(usize, 1) + @intFromBool(self.reg.pc & 0xff00 != prev_pc & 0xff00);
             }
         }
 
@@ -145,12 +145,12 @@ pub fn Cpu(comptime config: Config) type {
                     },
                     .absoluteX => {
                         const val = self.mem.readWord(self.reg.pc);
-                        self.cycles += @boolToInt(instruction.var_cycles and (val +% self.reg.x) & 0xff < val & 0xff);
+                        self.cycles += @intFromBool(instruction.var_cycles and (val +% self.reg.x) & 0xff < val & 0xff);
                         break :blk ValueReference{ .memory = val +% self.reg.x };
                     },
                     .absoluteY => {
                         const val = self.mem.readWord(self.reg.pc);
-                        self.cycles += @boolToInt(instruction.var_cycles and (val +% self.reg.y) & 0xff < val & 0xff);
+                        self.cycles += @intFromBool(instruction.var_cycles and (val +% self.reg.y) & 0xff < val & 0xff);
                         break :blk ValueReference{ .memory = val +% self.reg.y };
                     },
                     .immediate => break :blk ValueReference{ .memory = self.reg.pc },
@@ -176,7 +176,7 @@ pub fn Cpu(comptime config: Config) type {
                         const val_low = self.mem.read(zero_page);
                         const val_high = self.mem.read(zero_page +% 1);
 
-                        self.cycles += @boolToInt(instruction.var_cycles and (val_low +% self.reg.y) < val_low);
+                        self.cycles += @intFromBool(instruction.var_cycles and (val_low +% self.reg.y) < val_low);
                         break :blk ValueReference{ .memory = ((@as(u16, val_high) << 8) | val_low) +% self.reg.y };
                     },
                     .relative => break :blk ValueReference{ .memory = self.reg.pc },
@@ -206,12 +206,12 @@ pub fn Cpu(comptime config: Config) type {
                     const sum: u9 = @as(u9, self.reg.a) +
                         @as(u9, original) +
                         @as(u9, self.reg.getFlags("C"));
-                    const sum_u8: u8 = @truncate(u8, sum);
+                    const sum_u8: u8 = @truncate(sum);
 
                     const n_flag = sum_u8 & 0x80;
                     const v_flag = (((self.reg.a ^ sum_u8) & (original ^ sum_u8)) & 0x80) >> 1;
-                    const z_flag = @as(u8, @boolToInt(sum_u8 == 0)) << 1;
-                    const c_flag = @truncate(u8, (sum & 0x100) >> 8);
+                    const z_flag = @as(u2, @intFromBool(sum_u8 == 0)) << 1;
+                    const c_flag = @as(u1, @truncate((sum & 0x100) >> 8));
                     self.reg.setFlags("NVZC", n_flag | v_flag | z_flag | c_flag);
 
                     self.reg.a = sum_u8;
@@ -239,12 +239,12 @@ pub fn Cpu(comptime config: Config) type {
                 .op_bit => {
                     const mem = value.read(self);
                     const val = self.reg.a & mem;
-                    self.reg.setFlags("NVZ", (mem & 0xc0) | @as(u8, @boolToInt(val == 0)) << 1);
+                    self.reg.setFlags("NVZ", (mem & 0xc0) | @as(u8, @intFromBool(val == 0)) << 1);
                 },
                 .op_brk => {
-                    var push_sp = self.reg.pc +% 1;
-                    self.pushStack(@truncate(u8, push_sp >> 8));
-                    self.pushStack(@truncate(u8, push_sp));
+                    const push_sp = self.reg.pc +% 1;
+                    self.pushStack(@truncate(push_sp >> 8));
+                    self.pushStack(@truncate(push_sp));
                     self.pushStack(self.reg.p | 0b0011_0000);
                     self.reg.pc = self.mem.readWord(0xfffe);
                 },
@@ -299,9 +299,9 @@ pub fn Cpu(comptime config: Config) type {
                 },
                 .op_jmp => self.reg.pc = value.memory -% 2,
                 .op_jsr => {
-                    var push_sp = self.reg.pc +% 1;
-                    self.pushStack(@truncate(u8, push_sp >> 8));
-                    self.pushStack(@truncate(u8, push_sp));
+                    const push_sp = self.reg.pc +% 1;
+                    self.pushStack(@truncate(push_sp >> 8));
+                    self.pushStack(@truncate(push_sp));
                     self.reg.pc = value.memory -% 2;
                 },
                 .op_lda => {
@@ -367,13 +367,13 @@ pub fn Cpu(comptime config: Config) type {
                     const original: u8 = value.read(self);
                     const dif: u9 = @as(u9, self.reg.a) -%
                         @as(u9, original) -%
-                        @as(u9, @boolToInt(!self.reg.getFlag("C")));
-                    const dif_u8: u8 = @truncate(u8, dif);
+                        @as(u9, @intFromBool(!self.reg.getFlag("C")));
+                    const dif_u8: u8 = @truncate(dif);
 
                     const n_flag = dif_u8 & 0x80;
                     const v_flag = (((self.reg.a ^ dif_u8) & (~original ^ dif_u8)) & 0x80) >> 1;
-                    const z_flag = @as(u8, @boolToInt(dif_u8 == 0)) << 1;
-                    const c_flag = ~@truncate(u1, (dif & 0x100) >> 8);
+                    const z_flag = @as(u8, @intFromBool(dif_u8 == 0)) << 1;
+                    const c_flag = ~@as(u1, @truncate((dif & 0x100) >> 8));
                     self.reg.setFlags("NVZC", n_flag | v_flag | z_flag | c_flag);
 
                     self.reg.a = dif_u8;
@@ -477,7 +477,7 @@ pub fn Cpu(comptime config: Config) type {
                 },
                 .relative => {
                     const val = value.peek(self);
-                    const new_pc = @bitCast(u16, @bitCast(i16, self.reg.pc) +% @bitCast(i8, val) +% 1);
+                    const new_pc: u16 = @bitCast(@as(i16, @bitCast(self.reg.pc)) +% @as(i8, @bitCast(val)) +% 1);
                     std.debug.print("${x:0>2}      \t; PC ?= ${x:0>4}", .{ val, new_pc });
                 },
                 .zeroPage => {
@@ -525,7 +525,7 @@ pub fn Memory(comptime config: Config) type {
         pub fn peek(self: Self, addr: u16) u8 {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                0x2000...0x3fff => return self.ppu.reg.peek(@truncate(u3, addr)),
+                0x2000...0x3fff => return self.ppu.reg.peek(@truncate(addr)),
                 0x8000...0xffff => return self.cart.peekPrg(addr) orelse 0,
                 else => return 0,
             }
@@ -534,8 +534,8 @@ pub fn Memory(comptime config: Config) type {
         pub fn read(self: Self, addr: u16) u8 {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                0x2000...0x3fff => return self.ppu.reg.read(@truncate(u3, addr)),
-                0x4000...0x4013, 0x4015, 0x4017 => return self.apu.read(@truncate(u5, addr)),
+                0x2000...0x3fff => return self.ppu.reg.read(@truncate(addr)),
+                0x4000...0x4013, 0x4015, 0x4017 => return self.apu.read(@truncate(addr)),
                 0x4016 => return self.controller.getNextButton(),
                 0x4020...0xffff => return self.cart.readPrg(addr) orelse 0,
                 else => {
@@ -546,15 +546,15 @@ pub fn Memory(comptime config: Config) type {
         }
 
         pub fn readWord(self: Self, addr: u16) u16 {
-            var low = self.read(addr);
+            const low = self.read(addr);
             return (@as(u16, self.read(addr +% 1)) << 8) | low;
         }
 
         pub fn write(self: *Self, addr: u16, val: u8) void {
             switch (addr) {
                 0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
-                0x2000...0x3fff => self.ppu.reg.write(@truncate(u3, addr), val),
-                0x4000...0x4013, 0x4015, 0x4017 => self.apu.write(@truncate(u5, addr), val),
+                0x2000...0x3fff => self.ppu.reg.write(@truncate(addr), val),
+                0x4000...0x4013, 0x4015, 0x4017 => self.apu.write(@truncate(addr), val),
                 0x4014 => @fieldParentPtr(Cpu(config), "mem", self).dma(val),
                 0x4016 => if (val & 1 == 1) {
                     self.controller.strobe();

@@ -31,7 +31,7 @@ pub const PureController = struct {
 
     pub fn getNextButton(self: *PureController) u8 {
         if (self.shift < 8) {
-            const val = (self.buttons >> @truncate(u3, self.shift)) & 1;
+            const val = (self.buttons >> @truncate(self.shift)) & 1;
             self.shift += 1;
             return val;
         } else {

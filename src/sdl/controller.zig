@@ -18,7 +18,7 @@ pub const Controller = struct {
         const keys = blk: {
             var length: c_int = 0;
             var ret: [*]const u8 = Sdl.getKeyboardState(.{&length});
-            break :blk ret[0..@intCast(usize, length)];
+            break :blk ret[0..@intCast(length)];
         };
 
         self.buttons = 0;
@@ -52,7 +52,7 @@ pub const Controller = struct {
 
     pub fn getNextButton(self: *Controller) u8 {
         if (self.shift < 8) {
-            const val = (self.buttons >> @truncate(u3, self.shift)) & 1;
+            const val = (self.buttons >> @truncate(self.shift)) & 1;
             self.shift += 1;
             return val;
         } else {

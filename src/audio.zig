@@ -12,19 +12,19 @@ pub fn Context(comptime method: IoMethod) type {
 }
 
 pub const PureContext = struct {
-    allocator: *Allocator,
+    allocator: Allocator,
     bytes: ArrayList(f32),
 
     pub const sample_rate = 44100 / 2;
 
-    pub fn init(allocator: *Allocator) !PureContext {
+    pub fn init(allocator: Allocator) !PureContext {
         return PureContext{
             .allocator = allocator,
             .bytes = ArrayList(f32){},
         };
     }
 
-    pub fn deinit(self: *PureContext, _: *Allocator) void {
+    pub fn deinit(self: *PureContext, _: Allocator) void {
         self.bytes.deinit(self.allocator);
     }
     pub fn addSample(self: *PureContext, val: f32) !void {

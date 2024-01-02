@@ -73,17 +73,17 @@ pub fn Ppu(comptime config: Config) type {
 
         fn evaluateSpritesScanline(self: *Self) void {
             const tall_sprites = self.reg.getFlag(.{ .flags = "H" });
-            self.sprite_list.setYCutoff(@intCast(i16, self.scanline) - if (tall_sprites) @as(i16, 16) else 8);
+            self.sprite_list.setYCutoff(@as(i16, @intCast(self.scanline)) - if (tall_sprites) @as(i16, 16) else 8);
 
             self.scanline_sprites.sprite_0_index = null;
-            const unevaluated_sprites = self.sprite_list.getScanlineSprites(@truncate(u8, self.scanline));
-            for (unevaluated_sprites) |sprite, i| {
-                const y_offset_16 =
+            const unevaluated_sprites = self.sprite_list.getScanlineSprites(@truncate(self.scanline));
+            for (unevaluated_sprites, 0..) |sprite, i| {
+                const y_offset_16: u4 =
                     if (getMaskBool(u8, sprite.attributes, 0x80))
-                    @truncate(u4, sprite.y -% self.scanline)
+                    @truncate(sprite.y -% self.scanline)
                 else
-                    @truncate(u4, (self.scanline - sprite.y) -% 1);
-                const y_offset = @truncate(u3, y_offset_16);
+                    @truncate((self.scanline - sprite.y) -% 1);
+                const y_offset: u3 = @truncate(y_offset_16);
 
                 const tile_offset = @as(u14, sprite.tile_index) << 4;
                 const pattern_offset = blk: {
@@ -106,14 +106,14 @@ pub fn Ppu(comptime config: Config) type {
                 const pattern_byte_low = blk: {
                     var byte = self.mem.read(pattern_offset | y_offset);
                     if (sprite.attributes & 0x40 != 0) {
-                        byte = @bitReverse(u8, byte);
+                        byte = @bitReverse(byte);
                     }
                     break :blk byte;
                 };
                 const pattern_byte_high = blk: {
                     var byte = self.mem.read(pattern_offset | y_offset | 8);
                     if (sprite.attributes & 0x40 != 0) {
-                        byte = @bitReverse(u8, byte);
+                        byte = @bitReverse(byte);
                     }
                     break :blk byte;
                 };
@@ -221,13 +221,13 @@ pub fn Ppu(comptime config: Config) type {
                 return 0;
             }
 
-            const nametable_byte: u14 = self.mem.peek(0x2000 | @truncate(u14, reverted_v.value));
+            const nametable_byte: u14 = self.mem.peek(0x2000 | @as(u14, @truncate(reverted_v.value & 0x1fff)));
             const addr = (nametable_byte << 4) | reverted_v.fineY();
             const offset = if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "B" })) @as(u14, 0x1000) else 0;
             const pattern_table_byte1 = self.mem.peek(addr | offset);
             const pattern_table_byte2 = self.mem.peek(addr | 8 | offset);
-            const p1: u1 = @truncate(u1, pattern_table_byte1 >> (7 - @truncate(u3, self.cycle +% self.fine_x)));
-            const p2: u1 = @truncate(u1, pattern_table_byte2 >> (7 - @truncate(u3, self.cycle +% self.fine_x)));
+            const p1: u1 = @truncate(pattern_table_byte1 >> (7 - @as(u3, @truncate(self.cycle +% self.fine_x))));
+            const p2: u1 = @truncate(pattern_table_byte2 >> (7 - @as(u3, @truncate(self.cycle +% self.fine_x))));
 
             return p1 | (@as(u2, p2) << 1);
         }
@@ -247,7 +247,7 @@ pub fn Ppu(comptime config: Config) type {
                     self.scanline_sprites.sprite_pattern_srs1[i].feed();
                     self.scanline_sprites.sprite_pattern_srs2[i].feed();
                     if (index == null) {
-                        index = @truncate(u8, i);
+                        index = @truncate(i);
                     }
                 }
             }
@@ -258,7 +258,7 @@ pub fn Ppu(comptime config: Config) type {
         fn drawPixel(self: *Self) void {
             const reverted_v = blk: {
                 var old_v = self.vram_addr;
-                const sub: u2 = if (7 - @truncate(u3, self.cycle) >= self.fine_x) 2 else 1;
+                const sub: u2 = if (7 - @as(u3, @truncate(self.cycle)) >= self.fine_x) 2 else 1;
                 if (old_v.coarseX() < sub) {
                     old_v.value ^= 0x400;
                 }
@@ -306,9 +306,9 @@ pub fn Ppu(comptime config: Config) type {
 
                         const x_quadrant = reverted_v.value & 2;
                         const y_quadrant = (reverted_v.value >> 4) & 4;
-                        const shift = @truncate(u3, x_quadrant | y_quadrant);
+                        const shift: u3 = @truncate(x_quadrant | y_quadrant);
 
-                        attribute_index = @truncate(u2, attribute_table_byte >> shift);
+                        attribute_index = (attribute_table_byte >> shift) & 0x3;
 
                         palette_base = 0x3f00;
                     }
@@ -328,7 +328,7 @@ const SpritePatternShiftRegister = struct {
     output_bit: u1 = 0,
 
     fn feed(self: *SpritePatternShiftRegister) void {
-        self.output_bit = @truncate(u1, (self.bits & 0x80) >> 7);
+        self.output_bit = @truncate((self.bits & 0x80) >> 7);
         self.bits <<= 1;
     }
 
@@ -374,7 +374,7 @@ const SpriteList = struct {
                 return lhs.y < rhs.y;
             }
         };
-        std.sort.sort(Sprite, self.sprites[0..self.end_index], Context{}, Context.cmp);
+        std.sort.pdq(Sprite, self.sprites[0..self.end_index], Context{}, Context.cmp);
     }
 
     fn setYCutoff(self: *SpriteList, y: i16) void {
@@ -443,7 +443,7 @@ fn Registers(comptime config: Config) type {
         }
 
         pub fn peek(self: Self, i: u3) u8 {
-            return @truncate(u8, (@bitCast(u64, self) >> (@as(u6, i) * 8)));
+            return @truncate((@as(u64, @bitCast(self)) >> (@as(u6, i) * 8)));
         }
 
         pub fn read(self: *Self, i: u3) u8 {
@@ -459,7 +459,7 @@ fn Registers(comptime config: Config) type {
                 },
                 7 => {
                     const prev = self.ppu_data;
-                    self.ppu_data = ppu.mem.read(@truncate(u14, ppu.vram_addr.value));
+                    self.ppu_data = ppu.mem.read(@truncate(ppu.vram_addr.value));
                     ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
                     return prev;
                 },
@@ -470,7 +470,7 @@ fn Registers(comptime config: Config) type {
 
         pub fn write(self: *Self, i: u3, val: u8) void {
             var ppu = @fieldParentPtr(Ppu(config), "reg", self);
-            var val_u15 = @as(u15, val);
+            const val_u15: u15 = val;
             switch (i) {
                 0 => {
                     setMask(u15, &ppu.vram_temp.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
@@ -481,7 +481,7 @@ fn Registers(comptime config: Config) type {
                 },
                 5 => if (!ppu.w) {
                     ppu.vram_temp.value = (ppu.vram_temp.value & ~@as(u15, 0x1f)) | (val >> 3);
-                    ppu.fine_x = @truncate(u3, val);
+                    ppu.fine_x = @truncate(val);
                     ppu.w = true;
                 } else {
                     const old_t = ppu.vram_temp.value & ~@as(u15, 0b111_0011_1110_0000);
@@ -497,15 +497,15 @@ fn Registers(comptime config: Config) type {
                     ppu.w = false;
                 },
                 7 => {
-                    ppu.mem.write(@truncate(u14, ppu.vram_addr.value), val);
+                    ppu.mem.write(@truncate(ppu.vram_addr.value), val);
                     ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
                 },
                 else => {},
             }
-            const bytes = @bitCast(u64, self.*);
+            const bytes: u64 = @bitCast(self.*);
             const shift = @as(u6, i) * 8;
             const mask = @as(u64, 0xff) << shift;
-            self.* = @bitCast(Self, (bytes & ~mask) | @as(u64, val) << shift);
+            self.* = @bitCast((bytes & ~mask) | @as(u64, val) << shift);
         }
     };
 }

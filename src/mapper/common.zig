@@ -25,7 +25,7 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
 
         selected: [selectable_banks]usize,
 
-        pub fn init(allocator: *Allocator, bytes: ?[]u8) !Self {
+        pub fn init(allocator: Allocator, bytes: ?[]u8) !Self {
             var bank_switcher = blk: {
                 if (bytes) |b| {
                     break :blk Self{
@@ -35,7 +35,7 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
                     };
                 } else {
                     const b = try allocator.alloc(u8, size * selectable_banks);
-                    std.mem.set(u8, b, 0);
+                    @memset(b, 0);
                     break :blk Self{
                         .bytes = b,
                         .writable = true,
@@ -44,14 +44,14 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
                 }
             };
 
-            for (bank_switcher.selected) |*b, i| {
+            for (&bank_switcher.selected, 0..) |*b, i| {
                 b.* = (i % (bank_switcher.bankCount())) * size;
             }
 
             return bank_switcher;
         }
 
-        pub fn deinit(self: Self, allocator: *Allocator) void {
+        pub fn deinit(self: Self, allocator: Allocator) void {
             allocator.free(self.bytes);
         }
 
@@ -84,16 +84,16 @@ pub fn BankSwitcher(comptime size: usize, comptime selectable_banks: usize) type
                     break :blk self.selected[i];
                 }
             } else unreachable;
-            return offset | @truncate(BankAddr, addr);
+            return offset | @as(BankAddr, @truncate(addr));
         }
 
         pub fn read(self: Self, addr: u16) u8 {
-            return self.bytes[self.mapAddr(@truncate(FullAddr, addr))];
+            return self.bytes[self.mapAddr(@as(FullAddr, @truncate(addr)))];
         }
 
         pub fn write(self: *Self, addr: u16, val: u8) void {
             if (self.writable) {
-                self.bytes[self.mapAddr(@truncate(FullAddr, addr))] = val;
+                self.bytes[self.mapAddr(@as(FullAddr, @truncate(addr)))] = val;
             }
         }
     };
@@ -107,11 +107,11 @@ pub const PrgRam = struct {
     // TODO: used for savegames, etc.
     persistent: bool = false,
 
-    pub fn init(allocator: *Allocator, mapped: bool, persistent: bool) !PrgRam {
+    pub fn init(allocator: Allocator, mapped: bool, persistent: bool) !PrgRam {
         const bytes = blk: {
             if (mapped) {
                 const b = try allocator.alloc(u8, 0x2000);
-                std.mem.set(u8, b, 0);
+                @memset(b, 0);
                 break :blk b;
             } else {
                 break :blk null;
@@ -124,7 +124,7 @@ pub const PrgRam = struct {
         };
     }
 
-    pub fn deinit(self: PrgRam, allocator: *Allocator) void {
+    pub fn deinit(self: PrgRam, allocator: Allocator) void {
         if (self.bytes) |bytes| {
             allocator.free(bytes);
         }
@@ -161,12 +161,12 @@ pub const PrgRam = struct {
 
 pub fn mirrorNametable(mirroring: Mirroring, addr: u16) u12 {
     return switch (mirroring) {
-        .horizontal => @truncate(u12, addr & 0xbff),
-        .vertical => @truncate(u12, addr & 0x7ff),
-        .four_screen => @truncate(u12, addr),
+        .horizontal => @as(u12, @truncate(addr & 0xbff)),
+        .vertical => @as(u12, @truncate(addr & 0x7ff)),
+        .four_screen => @as(u12, @truncate(addr)),
     };
 }
 
 pub fn fromGeneric(comptime Self: type, comptime config: Config, generic: GenericMapper(config)) *Self {
-    return @ptrCast(*Self, generic.mapper_ptr);
+    return @as(*Self, @ptrCast(generic.mapper_ptr));
 }

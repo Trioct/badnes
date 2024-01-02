@@ -52,7 +52,7 @@ pub fn Mapper(comptime config: Config) type {
 
         pub fn initMem(
             self: *Self,
-            allocator: *Allocator,
+            allocator: Allocator,
             console: *Console(config),
             info: *ines.RomInfo,
         ) Allocator.Error!void {
@@ -62,14 +62,14 @@ pub fn Mapper(comptime config: Config) type {
                 .prg_ram = try common.PrgRam.init(allocator, true, info.has_sram),
                 .prgs = try common.Prgs.init(allocator, info.prg_rom),
                 .chrs = try common.Chrs.init(allocator, info.chr_rom),
-                .mirroring = @intToEnum(@TypeOf(self.mirroring), @enumToInt(info.mirroring)),
+                .mirroring = @enumFromInt(@intFromEnum(info.mirroring)),
             };
 
             self.updatePrg();
             self.updateChr();
         }
 
-        pub fn deinitMem(generic: G, allocator: *Allocator) void {
+        pub fn deinitMem(generic: G, allocator: Allocator) void {
             const self = common.fromGeneric(Self, config, generic);
 
             self.prg_ram.deinit(allocator);
@@ -82,10 +82,10 @@ pub fn Mapper(comptime config: Config) type {
             const self = common.fromGeneric(Self, config, generic);
 
             return switch (self.mirroring) {
-                .one_screen_lower => @truncate(u12, addr & 0x3ff),
-                .one_screen_upper => @truncate(u12, 0x400 | (addr & 0x3ff)),
-                .vertical => @truncate(u12, addr & 0x7ff),
-                .horizontal => @truncate(u12, addr & 0xbff),
+                .one_screen_lower => @truncate(addr & 0x3ff),
+                .one_screen_upper => @truncate(0x400 | (addr & 0x3ff)),
+                .vertical => @truncate(addr & 0x7ff),
+                .horizontal => @truncate(addr & 0xbff),
             };
         }
 
@@ -158,19 +158,19 @@ pub fn Mapper(comptime config: Config) type {
             }
 
             if (self.write_count != 4) {
-                self.shift_register = (self.shift_register >> 1) | (@as(u4, @truncate(u1, val)) << 3);
+                self.shift_register = (self.shift_register >> 1) | (@as(u4, @truncate(val & 1)) << 3);
                 self.write_count += 1;
             } else {
-                const final_val = @as(u5, self.shift_register) | (@as(u5, @truncate(u1, val)) << 4);
+                const final_val = @as(u5, self.shift_register) | (@as(u5, @truncate(val & 1)) << 4);
                 switch (addr) {
                     0x8000...0x9fff => {
-                        self.mirroring = @intToEnum(@TypeOf(self.mirroring), @truncate(u2, final_val));
-                        self.prg_bank_mode = switch (@truncate(u2, final_val >> 2)) {
+                        self.mirroring = @enumFromInt(@as(u2, @truncate(final_val)));
+                        self.prg_bank_mode = switch (@as(u2, @truncate(final_val >> 2))) {
                             0, 1 => .prg_switch_both,
                             2 => .prg_fix_first,
                             3 => .prg_fix_last,
                         };
-                        self.chr_bank_mode = @intToEnum(@TypeOf(self.chr_bank_mode), @truncate(u1, final_val >> 4));
+                        self.chr_bank_mode = @enumFromInt(@as(u1, @truncate(final_val >> 4)));
 
                         self.updatePrg();
                         self.updateChr();
@@ -185,7 +185,7 @@ pub fn Mapper(comptime config: Config) type {
                     },
                     0xe000...0xffff => {
                         self.prg_ram.enabled = final_val & 0x10 == 0;
-                        self.prg_bank = @truncate(u4, final_val);
+                        self.prg_bank = @truncate(final_val);
 
                         self.updatePrg();
                     },

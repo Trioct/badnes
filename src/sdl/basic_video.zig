@@ -13,7 +13,7 @@ const Context = @import("context.zig").Context;
 pub const BasicContext = struct {
     pixel_buffer: PixelBuffer,
 
-    pub fn init(parent_context: *Context(false)) !BasicContext {
+    pub fn init(parent_context: Context) !BasicContext {
         try Gl.viewport(.{ 0, 0, 256 * 3, 240 * 3 });
         try Gl.enable(.{c.GL_TEXTURE_2D});
 
@@ -29,7 +29,7 @@ pub const BasicContext = struct {
         return self;
     }
 
-    pub fn deinit(self: BasicContext, allocator: *Allocator) void {
+    pub fn deinit(self: BasicContext, allocator: Allocator) void {
         self.pixel_buffer.deinit(allocator);
     }
 
@@ -72,14 +72,14 @@ pub const BasicContext = struct {
 };
 
 pub const PixelBuffer = struct {
-    pixels: []u32 = null,
+    pixels: []u32 = undefined,
     width: usize,
     height: usize,
     scale: usize = 1,
 
     texture: c.GLuint,
 
-    pub fn init(allocator: *Allocator, width: usize, height: usize) !PixelBuffer {
+    pub fn init(allocator: Allocator, width: usize, height: usize) !PixelBuffer {
         var texture: c.GLuint = undefined;
         try Gl.genTextures(.{ 1, &texture });
 
@@ -100,7 +100,7 @@ pub const PixelBuffer = struct {
         };
     }
 
-    pub fn deinit(self: PixelBuffer, allocator: *Allocator) void {
+    pub fn deinit(self: PixelBuffer, allocator: Allocator) void {
         allocator.free(self.pixels);
         Gl.deleteTextures(.{ 1, &self.texture }) catch {};
     }
@@ -116,22 +116,22 @@ pub const PixelBuffer = struct {
             c.GL_TEXTURE_2D,
             0,
             c.GL_RGBA8,
-            @intCast(c_int, self.width),
-            @intCast(c_int, self.height),
+            @as(c.GLsizei, @intCast(self.width)),
+            @as(c.GLsizei, @intCast(self.height)),
             0,
             c.GL_RGBA,
             c.GL_UNSIGNED_INT_8_8_8_8,
-            @ptrCast(*const c_void, self.pixels),
+            @as(?*const c.GLvoid, @ptrCast(self.pixels)),
         });
     }
 
     /// Draws directly to the current opengl fbo (probably the screen)
     pub fn drawRaw(self: PixelBuffer) !void {
         const vertex_positions = [8]c_int{
-            0,                                        0,
-            @intCast(c_int, self.width * self.scale), 0,
-            @intCast(c_int, self.width * self.scale), @intCast(c_int, self.height * self.scale),
-            0,                                        @intCast(c_int, self.height * self.scale),
+            0,                                 0,
+            @intCast(self.width * self.scale), 0,
+            @intCast(self.width * self.scale), @intCast(self.height * self.scale),
+            0,                                 @intCast(self.height * self.scale),
         };
 
         const tex_coords = [8]c_int{

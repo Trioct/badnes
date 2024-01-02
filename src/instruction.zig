@@ -346,7 +346,7 @@ const addr_lut = blk: {
     };
 
     var result = [1]Addressing(.accurate){undefined} ** 256;
-    for (numbered) |n, i| {
+    for (numbered, 0..) |n, i| {
         result[i] = intToEnum[n];
     }
     break :blk result;
@@ -366,7 +366,7 @@ const access_lut = blk: {
     @setEvalBranchQuota(2000);
     var result = [1]Access{undefined} ** 256;
 
-    for (result) |*r, i| {
+    for (&result, 0..) |*r, i| {
         const access = switch (addr_lut[i]) {
             .special => .special,
             .implied, .immediate, .relative => .read,
@@ -406,7 +406,7 @@ fn MergedEnum(comptime T1: type, comptime T2: type) type {
 
     const total_fields = type_info1.Enum.fields.len + type_info2.Enum.fields.len;
 
-    var fields = [1]std.builtin.TypeInfo.EnumField{undefined} ** total_fields;
+    var fields = [1]std.builtin.Type.EnumField{undefined} ** total_fields;
     var i: usize = 0;
     for (type_info1.Enum.fields) |field| {
         fields[i] = .{ .name = field.name, .value = i };
@@ -421,10 +421,9 @@ fn MergedEnum(comptime T1: type, comptime T2: type) type {
     const bits = std.math.log2_int_ceil(usize, total_fields);
 
     return @Type(.{ .Enum = .{
-        .layout = .Auto,
         .tag_type = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = bits } }),
         .fields = fields[0..],
-        .decls = ([0]std.builtin.TypeInfo.Declaration{})[0..],
+        .decls = ([0]std.builtin.Type.Declaration{})[0..],
         .is_exhaustive = true,
     } });
 }
@@ -432,13 +431,13 @@ fn MergedEnum(comptime T1: type, comptime T2: type) type {
 pub fn opToString(op: anytype) []const u8 {
     const enum_strs = comptime blk: {
         const enum_fields = @typeInfo(@TypeOf(op)).Enum.fields;
-        var arr = [_]([3]u8){undefined} ** enum_fields.len;
-        for (arr) |*idx, i| {
+        const arr = [_]([3]u8){undefined} ** enum_fields.len;
+        for (arr, 0..) |*idx, i| {
             _ = std.ascii.upperString(idx[0..], enum_fields[i].name[3..]);
         }
         break :blk arr;
     };
-    return enum_strs[@enumToInt(op)][0..];
+    return enum_strs[@intFromEnum(op)][0..];
 }
 
 pub fn Op(comptime precision: Precision) type {

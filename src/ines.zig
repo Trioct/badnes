@@ -4,9 +4,9 @@ const std = @import("std");
 const fs = std.fs;
 const io = std.io;
 
-const Rom = @import("cart.zig").Cart.Rom;
-
 const Allocator = std.mem.Allocator;
+
+const Rom = @import("cart.zig").Cart.Rom;
 
 pub const InesError = error{
     MissingMagic,
@@ -38,7 +38,7 @@ pub const RomInfo = struct {
         mul_8kb: u8,
     };
 
-    pub fn deinit(self: RomInfo, allocator: *Allocator) void {
+    pub fn deinit(self: RomInfo, allocator: Allocator) void {
         if (self.prg_rom) |prg| {
             allocator.free(prg);
         }
@@ -47,7 +47,7 @@ pub const RomInfo = struct {
         }
     }
 
-    pub fn readFile(allocator: *Allocator, path: []const u8) !RomInfo {
+    pub fn readFile(allocator: Allocator, path: []const u8) !RomInfo {
         std.log.info("Loading rom at path \"{s}\"", .{path});
 
         const file = try fs.cwd().openFile(path, .{});
@@ -56,7 +56,7 @@ pub const RomInfo = struct {
         return RomInfo.readReader(allocator, file.reader());
     }
 
-    pub fn readReader(allocator: *Allocator, reader: anytype) !RomInfo {
+    pub fn readReader(allocator: Allocator, reader: anytype) !RomInfo {
         const magic = "NES\x1a";
         if (!(try reader.isBytes(magic[0..]))) {
             return InesError.MissingMagic;
@@ -73,10 +73,10 @@ pub const RomInfo = struct {
         };
 
         const flags6 = try reader.readByte();
-        const mirroring = blk: {
+        const mirroring: Mirroring = blk: {
             const bit0 = flags6 & 0b01;
             const bit1 = (flags6 >> 2) & 0b10;
-            break :blk @intToEnum(Mirroring, bit0 | bit1);
+            break :blk @enumFromInt(bit0 | bit1);
         };
         const has_sram = (flags6 >> 1) & 1 == 1;
         const has_trainer = (flags6 >> 2) & 1 == 1;

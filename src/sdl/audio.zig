@@ -24,7 +24,7 @@ pub const Context = struct {
         pub fn init(samples: []f32, preferred_size: usize) SampleBuffer {
             std.debug.assert(preferred_size < samples.len);
 
-            std.mem.set(f32, samples[0..], 0);
+            @memset(samples[0..], 0);
             return SampleBuffer{
                 .samples = samples,
                 .index = preferred_size,
@@ -59,7 +59,7 @@ pub const Context = struct {
         }
     };
 
-    pub fn alloc(allocator: *Allocator) !Context {
+    pub fn alloc(allocator: Allocator) !Context {
         const buffer = try allocator.alloc(f32, Context.sample_rate);
         return Context{
             .device = undefined,
@@ -90,7 +90,7 @@ pub const Context = struct {
         self.pause();
     }
 
-    pub fn deinit(self: *Context, allocator: *Allocator) void {
+    pub fn deinit(self: *Context, allocator: Allocator) void {
         Sdl.closeAudioDevice(.{self.device});
         allocator.free(self.buffer.samples);
     }
@@ -117,12 +117,12 @@ pub const Context = struct {
         self.previous_sample = low_pass;
     }
 
-    fn audioCallback(user_data: ?*c_void, raw_buffer: [*c]u8, samples: c_int) callconv(.C) void {
-        var context = @ptrCast(*Context, @alignCast(@sizeOf(@TypeOf(user_data)), user_data.?));
-        var buffer = @ptrCast([*]f32, @alignCast(4, raw_buffer))[0..@intCast(usize, @divExact(samples, 4))];
+    fn audioCallback(user_data: ?*anyopaque, raw_buffer: [*c]u8, samples: c_int) callconv(.C) void {
+        const context: *Context = @ptrCast(@alignCast(user_data.?));
+        const buffer: []f32 = @as([*]f32, @ptrCast(@alignCast(raw_buffer)))[0..@intCast(@divExact(samples, 4))];
 
-        const ps = @intToFloat(f64, context.buffer.preferred_size);
-        const length = @intToFloat(f64, context.buffer.length());
+        const ps: f64 = @floatFromInt(context.buffer.preferred_size);
+        const length: f64 = @floatFromInt(context.buffer.length());
         //const copy_rate: f64 = 0.25 * (1 + length / ps);
         //const copy_rate: f64 = 0.25 * (length / ps - 1) + 1;
         const copy_rate: f64 = blk: {
@@ -138,7 +138,7 @@ pub const Context = struct {
                 b.* = context.buffer.get(i);
 
                 const inc = copy_rate + copy_rem;
-                i += @floatToInt(usize, @trunc(inc));
+                i += @intFromFloat(@trunc(inc));
                 copy_rem = @mod(inc, 1);
             }
         } else {

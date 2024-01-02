@@ -60,7 +60,7 @@ pub const Registers = struct {
     }
 
     pub fn setFlagsNZ(self: *Registers, val: u8) void {
-        self.setFlags("NZ", (val & 0x80) | @as(u8, @boolToInt(val == 0)) << 1);
+        self.setFlags("NZ", (val & 0x80) | @as(u8, @intFromBool(val == 0)) << 1);
     }
 
     fn FieldType(comptime field: []const u8) type {

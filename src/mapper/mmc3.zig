@@ -49,7 +49,7 @@ pub fn Mapper(comptime config: Config) type {
 
         pub fn initMem(
             self: *Self,
-            allocator: *Allocator,
+            allocator: Allocator,
             console: *Console(config),
             info: *ines.RomInfo,
         ) Allocator.Error!void {
@@ -69,7 +69,7 @@ pub fn Mapper(comptime config: Config) type {
             self.updateChr();
         }
 
-        pub fn deinitMem(generic: G, allocator: *Allocator) void {
+        pub fn deinitMem(generic: G, allocator: Allocator) void {
             const self = common.fromGeneric(Self, config, generic);
 
             self.prg_ram.deinit(allocator);
@@ -170,15 +170,15 @@ pub fn Mapper(comptime config: Config) type {
         fn writeRomEven(self: *Self, addr: u16, val: u8) void {
             switch (addr) {
                 0x8000...0x9ffe => {
-                    self.select_register = @truncate(u3, val);
-                    self.prg_bank_mode = @intToEnum(@TypeOf(self.prg_bank_mode), @truncate(u1, val >> 6));
-                    self.chr_bank_mode = @intToEnum(@TypeOf(self.chr_bank_mode), @truncate(u1, val >> 7));
+                    self.select_register = @truncate(val);
+                    self.prg_bank_mode = @enumFromInt(@as(u1, @truncate(val >> 6)));
+                    self.chr_bank_mode = @enumFromInt(@as(u1, @truncate(val >> 7)));
 
                     self.updatePrg();
                     self.updateChr();
                 },
                 0xa000...0xbffe => if (self.mirroring != .four_screen) {
-                    self.mirroring = @intToEnum(ines.Mirroring, ~@truncate(u1, val));
+                    self.mirroring = @enumFromInt(~@as(u1, @truncate(val)));
                 },
                 0xc000...0xdffe => self.irq_latch = val,
                 0xe000...0xfffe => {

@@ -5,12 +5,6 @@ pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
     @cInclude("SDL2/SDL_audio.h");
     @cInclude("SDL2/SDL_opengl.h");
-
-    if (build_options.imgui) {
-        @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", "");
-        @cInclude("cimgui.h");
-        @cInclude("cimgui_impl.h");
-    }
 });
 
 pub const Sdl = struct {
@@ -77,87 +71,15 @@ pub const Gl = struct {
     pub const drawArrays = wrap(c.glDrawArrays, empty_options);
 };
 
-pub const Imgui = struct {
-    const empty_options = .{ .imgui = .{} };
-    const bool_err = .{ .imgui = .{ .bool_to_error = true } };
-
-    pub const createContext = wrap(c.igCreateContext, empty_options);
-    pub const sdl2InitForOpengl = wrap(c.ImGui_ImplSDL2_InitForOpenGL, bool_err);
-    pub const opengl3Init = wrap(c.ImGui_ImplOpenGL3_Init, bool_err);
-
-    pub const sdl2Shutdown = wrap(c.ImGui_ImplSDL2_Shutdown, empty_options);
-    pub const opengl3Shutdown = wrap(c.ImGui_ImplOpenGL3_Shutdown, empty_options);
-
-    pub const styleColorsDark = wrap(c.igStyleColorsDark, empty_options);
-
-    pub const sdl2ProcessEvent = wrap(c.ImGui_ImplSDL2_ProcessEvent, empty_options);
-
-    pub const opengl3NewFrame = wrap(c.ImGui_ImplOpenGL3_NewFrame, empty_options);
-    pub const sdl2NewFrame = wrap(c.ImGui_ImplSDL2_NewFrame, empty_options);
-    pub const newFrame = wrap(c.igNewFrame, empty_options);
-
-    pub const render = wrap(c.igRender, empty_options);
-    pub const opengl3RenderDrawData = wrap(c.ImGui_ImplOpenGL3_RenderDrawData, empty_options);
-    pub const getDrawData = wrap(c.igGetDrawData, empty_options);
-
-    pub const begin = wrap(c.igBegin, empty_options);
-    pub const end = wrap(c.igEnd, empty_options);
-
-    pub const findWindowByName = wrap(c.igFindWindowByName, .{ .imgui = .{ .optional_to_error = false } });
-    pub const setNextWindowSize = wrap(c.igSetNextWindowSize, empty_options);
-    pub const setNextWindowContentSize = wrap(c.igSetNextWindowContentSize, empty_options);
-
-    pub const beginPopup = wrap(c.igBeginPopup, empty_options);
-    pub const beginPopupModal = wrap(c.igBeginPopupModal, empty_options);
-    pub const endPopup = wrap(c.igEndPopup, empty_options);
-
-    pub const beginMenu = wrap(c.igBeginMenu, empty_options);
-    pub const endMenu = wrap(c.igEndMenu, empty_options);
-    pub const beginMainMenuBar = wrap(c.igBeginMainMenuBar, empty_options);
-    pub const endMainMenuBar = wrap(c.igEndMainMenuBar, empty_options);
-    pub const menuItem = wrap(c.igMenuItem_Bool, empty_options);
-    pub const menuItemPtr = wrap(c.igMenuItem_BoolPtr, empty_options);
-
-    pub const button = wrap(c.igButton, empty_options);
-    pub const image = wrap(c.igImage, empty_options);
-
-    pub const windowFlagsNone = c.ImGuiWindowFlags_None;
-    pub const windowFlagsNoTitleBar = c.ImGuiWindowFlags_NoTitleBar;
-    pub const windowFlagsNoResize = c.ImGuiWindowFlags_NoResize;
-    pub const windowFlagsNoMove = c.ImGuiWindowFlags_NoMove;
-    pub const windowFlagsNoScrollbar = c.ImGuiWindowFlags_NoScrollbar;
-    pub const windowFlagsNoScrollWithMouse = c.ImGuiWindowFlags_NoScrollWithMouse;
-    pub const windowFlagsNoCollapse = c.ImGuiWindowFlags_NoCollapse;
-    pub const windowFlagsAlwaysAutoResize = c.ImGuiWindowFlags_AlwaysAutoResize;
-    pub const windowFlagsNoBackground = c.ImGuiWindowFlags_NoBackground;
-    pub const windowFlagsNoSavedSettings = c.ImGuiWindowFlags_NoSavedSettings;
-    pub const windowFlagsNoMouseInputs = c.ImGuiWindowFlags_NoMouseInputs;
-    pub const windowFlagsMenuBar = c.ImGuiWindowFlags_MenuBar;
-    pub const windowFlagsHorizontalScrollbar = c.ImGuiWindowFlags_HorizontalScrollbar;
-    pub const windowFlagsNoFocusOnAppearing = c.ImGuiWindowFlags_NoFocusOnAppearing;
-    pub const windowFlagsNoBringToFrontOnFocus = c.ImGuiWindowFlags_NoBringToFrontOnFocus;
-    pub const windowFlagsAlwaysVerticalScrollbar = c.ImGuiWindowFlags_AlwaysVerticalScrollbar;
-    pub const windowFlagsAlwaysHorizontalScrollbar = c.ImGuiWindowFlags_AlwaysHorizontalScrollbar;
-    pub const windowFlagsAlwaysUseWindowPadding = c.ImGuiWindowFlags_AlwaysUseWindowPadding;
-    pub const windowFlagsNoNavInputs = c.ImGuiWindowFlags_NoNavInputs;
-    pub const windowFlagsNoNavFocus = c.ImGuiWindowFlags_NoNavFocus;
-    pub const windowFlagsUnsavedDocument = c.ImGuiWindowFlags_UnsavedDocument;
-    pub const windowFlagsNoNav = c.ImGuiWindowFlags_NoNavInputs | c.ImGuiWindowFlags_NoNavFocus;
-    pub const windowFlagsNoDecoration = c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoScrollbar | c.ImGuiWindowFlags_NoCollapse;
-    pub const windowFlagsNoInputs = c.ImGuiWindowFlags_NoMouseInputs | c.ImGuiWindowFlags_NoNavInputs | c.ImGuiWindowFlags_NoNavFocus;
-};
-
 pub const CError = error{
     SdlError,
     GlError,
-    ImguiError,
 };
 
 fn errorFromOptions(comptime options: WrapOptions) CError {
     return switch (options) {
         .sdl => CError.SdlError,
         .opengl => CError.GlError,
-        .imgui => CError.ImguiError,
     };
 }
 
@@ -173,11 +95,6 @@ const WrapOptions = union(enum) {
         check_error: bool = true,
     },
 
-    imgui: struct {
-        bool_to_error: bool = false,
-        optional_to_error: bool = true,
-    },
-
     const IntConversion = enum {
         int_to_error,
         int_to_zig,
@@ -186,7 +103,7 @@ const WrapOptions = union(enum) {
     fn intConversion(comptime self: WrapOptions) ?IntConversion {
         return switch (self) {
             .sdl => |x| x.int,
-            .opengl, .imgui => null,
+            .opengl => null,
         };
     }
 
@@ -194,7 +111,6 @@ const WrapOptions = union(enum) {
         return switch (self) {
             .sdl => false,
             .opengl => false,
-            .imgui => |x| x.bool_to_error,
         };
     }
 
@@ -202,7 +118,6 @@ const WrapOptions = union(enum) {
         return switch (self) {
             .sdl => |x| x.optional_to_error,
             .opengl => false,
-            .imgui => |x| x.optional_to_error,
         };
     }
 
@@ -210,7 +125,6 @@ const WrapOptions = union(enum) {
         return switch (self) {
             .sdl => |x| x.many_ptr_to_single,
             .opengl => false,
-            .imgui => true,
         };
     }
 };
@@ -257,7 +171,7 @@ fn WrappedCallReturn(comptime T: type, comptime options: WrapOptions) type {
 
 fn WrappedCheckedReturn(comptime T: type, comptime options: WrapOptions) type {
     switch (options) {
-        .sdl, .imgui => return T,
+        .sdl => return T,
         .opengl => |x| {
             std.debug.assert(T == void);
             if (x.check_error) {
@@ -290,7 +204,7 @@ fn WrappedSignature(comptime T: type, comptime options: WrapOptions) type {
     const RetType = WrappedFinalReturn(ReturnType(T), options);
     switch (@typeInfo(T)) {
         .Fn => |func_info| {
-            if (func_info.args.len == 0) {
+            if (func_info.params.len == 0) {
                 return (fn () RetType);
             } else {
                 return (fn (anytype) RetType);
@@ -340,7 +254,7 @@ fn wrapReturn(ret_val: anytype, comptime options: WrapOptions) WrappedCallReturn
         .Pointer => |pointer| switch (pointer.size) {
             .C => if (comptime options.manyPtrToSingle()) {
                 if (ret_val != 0) {
-                    return @ptrCast(*pointer.child, ret_val);
+                    return @ptrCast(ret_val);
                 } else {
                     return errorFromOptions(options);
                 }
@@ -380,9 +294,6 @@ fn wrapPrintError(
                 }
             }
         },
-        .imgui => if (is_error) {
-            std.log.err("Imgui error", .{});
-        },
     }
     return ret_val;
 }
@@ -395,7 +306,7 @@ fn wrap(
     const RetType = WrappedFinalReturn(ReturnType(T), options);
     switch (@typeInfo(@TypeOf(func))) {
         .Fn => |func_info| {
-            if (func_info.args.len == 0) {
+            if (func_info.params.len == 0) {
                 return (struct {
                     fn f() RetType {
                         return wrapPrintError(options, wrapReturn(func(), options));
@@ -404,7 +315,7 @@ fn wrap(
             } else {
                 return (struct {
                     fn f(args: anytype) RetType {
-                        return wrapPrintError(options, wrapReturn(@call(.{}, func, args), options));
+                        return wrapPrintError(options, wrapReturn(@call(.auto, func, args), options));
                     }
                 }).f;
             }

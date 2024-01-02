@@ -22,7 +22,7 @@ pub fn Mapper(comptime config: Config) type {
 
         pub fn initMem(
             self: *Self,
-            allocator: *Allocator,
+            allocator: Allocator,
             _: *Console(config),
             info: *ines.RomInfo,
         ) Allocator.Error!void {
@@ -32,10 +32,11 @@ pub fn Mapper(comptime config: Config) type {
                 .mirroring = info.mirroring,
             };
 
+            self.prgs.setBank(0, 2);
             self.prgs.setBank(1, self.prgs.bankCount() - 1);
         }
 
-        pub fn deinitMem(generic: G, allocator: *Allocator) void {
+        pub fn deinitMem(generic: G, allocator: Allocator) void {
             const self = common.fromGeneric(Self, config, generic);
 
             self.prgs.deinit(allocator);
@@ -66,7 +67,7 @@ pub fn Mapper(comptime config: Config) type {
             const self = common.fromGeneric(Self, config, generic.*);
 
             if (addr >= 0x8000 and addr <= 0xffff) {
-                self.prgs.setBank(0, @truncate(u4, val));
+                self.prgs.setBank(0, val & 0x7);
             }
         }
 

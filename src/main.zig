@@ -17,7 +17,7 @@ pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.detectLeaks();
 
-    var allocator = &gpa.allocator;
+    const allocator = gpa.allocator();
 
     try Sdl.init(.{sdl_bindings.c.SDL_INIT_VIDEO | sdl_bindings.c.SDL_INIT_AUDIO | sdl_bindings.c.SDL_INIT_EVENTS});
     defer Sdl.quit();
@@ -27,8 +27,7 @@ pub fn main() anyerror!void {
         .method = .sdl,
     }).alloc();
 
-    const sdl_context = if (build_options.imgui) .sdl_imgui else .sdl_basic;
-    var video_context = try video.Context(sdl_context).init(allocator, &console, "Badnes");
+    var video_context = try video.Context(.sdl_basic).init(allocator, "Badnes");
     defer video_context.deinit(allocator);
 
     var audio_context = try audio.Context(.sdl).alloc(allocator);
@@ -39,13 +38,12 @@ pub fn main() anyerror!void {
     console.init(allocator, video_context.getGamePixelBuffer(), &audio_context);
     defer console.deinit();
 
-    var args_iter = std.process.args();
+    var args_iter = try std.process.argsWithAllocator(allocator);
+    defer args_iter.deinit();
     _ = args_iter.skip();
 
-    if (args_iter.next(allocator)) |arg| {
-        const path = try arg;
-        defer allocator.free(path);
-        try console.loadRom(path);
+    if (args_iter.next()) |arg| {
+        try console.loadRom(arg);
     }
 
     var event: sdl_bindings.c.SDL_Event = undefined;

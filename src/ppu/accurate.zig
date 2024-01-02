@@ -108,7 +108,7 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         fn fetchNametableByte(self: *Self) void {
-            self.current_nametable_byte = self.mem.read(0x2000 | @truncate(u14, self.vram_addr.value & 0xfff));
+            self.current_nametable_byte = self.mem.read(@as(u14, 0x2000) | @as(u12, @truncate(self.vram_addr.value)));
         }
 
         fn fetchAttributeByte(self: *Self) void {
@@ -119,9 +119,9 @@ pub fn Ppu(comptime config: Config) type {
 
             const x_quadrant = self.vram_addr.value & 2;
             const y_quadrant = (self.vram_addr.value >> 4) & 4;
-            const shift = @truncate(u3, x_quadrant | y_quadrant);
-            self.attribute_sr1.prepare(@truncate(u1, attribute_table_byte >> shift));
-            self.attribute_sr2.prepare(@truncate(u1, attribute_table_byte >> (shift + 1)));
+            const shift: u3 = @truncate(x_quadrant | y_quadrant);
+            self.attribute_sr1.prepare(@truncate(attribute_table_byte >> shift));
+            self.attribute_sr2.prepare(@truncate(attribute_table_byte >> (shift + 1)));
         }
 
         fn fetchLowBgTile(self: *Self) void {
@@ -145,7 +145,7 @@ pub fn Ppu(comptime config: Config) type {
 
             self.feedShiftRegisters();
 
-            switch (@truncate(u2, self.cycle >> 1)) {
+            switch (@as(u2, @truncate(self.cycle >> 1))) {
                 0 => {
                     self.loadShiftRegisters();
                     self.fetchNametableByte(); // cycle % 8 == 0
@@ -204,12 +204,12 @@ pub fn Ppu(comptime config: Config) type {
                     const attributes = self.oam.secondary[self.oam.sprite_index * 4 + 2];
                     const x = self.oam.secondary[self.oam.sprite_index * 4 + 3];
 
-                    const y_offset_16 =
+                    const y_offset_16: u4 =
                         if (getMaskBool(u8, attributes, 0x80))
-                        @truncate(u4, ~(self.scanline - y))
+                        @truncate(~(self.scanline - y))
                     else
-                        @truncate(u4, self.scanline - y);
-                    const y_offset = @truncate(u3, y_offset_16);
+                        @truncate(self.scanline - y);
+                    const y_offset: u3 = @truncate(y_offset_16);
 
                     const tile_offset = @as(u14, tile_index) << 4;
                     const pattern_offset = blk: {
@@ -228,7 +228,7 @@ pub fn Ppu(comptime config: Config) type {
                             break :blk tile_offset;
                         }
                     };
-                    switch (@truncate(u2, self.cycle >> 1)) {
+                    switch (@as(u2, @truncate(self.cycle >> 1))) {
                         0 => {},
                         1 => {
                             self.oam.sprite_x_counters[self.oam.sprite_index] = x;
@@ -238,7 +238,7 @@ pub fn Ppu(comptime config: Config) type {
                             const pattern_byte = blk: {
                                 var byte = self.mem.read(pattern_offset | y_offset);
                                 if (attributes & 0x40 != 0) {
-                                    byte = @bitReverse(u8, byte);
+                                    byte = @bitReverse(byte);
                                 }
                                 break :blk byte;
                             };
@@ -248,7 +248,7 @@ pub fn Ppu(comptime config: Config) type {
                             const pattern_byte = blk: {
                                 var byte = self.mem.read(pattern_offset | y_offset | 8);
                                 if (attributes & 0x40 != 0) {
-                                    byte = @bitReverse(u8, byte);
+                                    byte = @bitReverse(byte);
                                 }
                                 break :blk byte;
                             };
@@ -342,7 +342,7 @@ pub fn Ppu(comptime config: Config) type {
                         const pattern_index = p1 | (@as(u2, p2) << 1);
                         if (pattern_index != 0) {
                             sprite_pattern_index = pattern_index;
-                            sprite_attribute_index = @truncate(u2, self.oam.sprite_attributes[i]);
+                            sprite_attribute_index = @truncate(self.oam.sprite_attributes[i]);
                             sprite_behind = getMaskBool(u8, self.oam.sprite_attributes[i], 0x20);
                             if (i == 0 and self.oam.has_sprite_0 and bg_pattern_index != 0) {
                                 self.reg.setFlag(.{ .field = "ppu_status", .flags = "S" }, true);
@@ -407,7 +407,7 @@ const BgPatternShiftRegister = struct {
     }
 
     fn get(self: BgPatternShiftRegister, offset: u3) u1 {
-        return @truncate(u1, ((self.bits << offset) & 0x8000) >> 15);
+        return @truncate(((self.bits << offset) & 0x8000) >> 15);
     }
 };
 
@@ -423,7 +423,7 @@ const SpritePatternShiftRegister = struct {
     }
 
     fn get(self: SpritePatternShiftRegister) u1 {
-        return @truncate(u1, (self.bits & 0x80) >> 7);
+        return @truncate((self.bits & 0x80) >> 7);
     }
 };
 
@@ -445,7 +445,7 @@ const AttributeShiftRegister = struct {
     }
 
     fn get(self: AttributeShiftRegister, offset: u3) u1 {
-        return @truncate(u1, ((self.bits << offset) & 0x80) >> 7);
+        return @truncate(((self.bits << offset) & 0x80) >> 7);
     }
 };
 
@@ -518,14 +518,14 @@ pub fn Registers(comptime config: Config) type {
                 },
                 7 => {
                     const val = blk: {
-                        const mem_val = self.ppu.mem.read(@truncate(u14, self.ppu.vram_addr.value));
+                        const mem_val = self.ppu.mem.read(@truncate(self.ppu.vram_addr.value));
                         if (self.ppu.vram_addr.value < 0x3f00) {
                             const prev = self.vram_data_buffer;
                             self.vram_data_buffer = mem_val;
                             break :blk prev;
                         } else {
                             // quirk
-                            const nametable_addr = @truncate(u14, self.ppu.vram_addr.value) & 0x2fff;
+                            const nametable_addr = @as(u14, @truncate(self.ppu.vram_addr.value)) & 0x2fff;
                             self.vram_data_buffer = self.ppu.mem.read(nametable_addr);
                             break :blk mem_val;
                         }
@@ -538,7 +538,7 @@ pub fn Registers(comptime config: Config) type {
 
         pub fn write(self: *Self, i: u3, val: u8) void {
             self.io_bus = val;
-            var val_u15 = @as(u15, val);
+            const val_u15: u15 = val;
             switch (i) {
                 0 => {
                     setMask(u15, &self.ppu.vram_temp.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
@@ -553,7 +553,7 @@ pub fn Registers(comptime config: Config) type {
                 },
                 5 => if (!self.write_toggle) {
                     setMask(u15, &self.ppu.vram_temp.value, val >> 3, 0x1f);
-                    self.ppu.fine_x = @truncate(u3, val);
+                    self.ppu.fine_x = @truncate(val);
                     self.write_toggle = true;
                 } else {
                     setMask(
@@ -573,7 +573,7 @@ pub fn Registers(comptime config: Config) type {
                     self.write_toggle = false;
                 },
                 7 => {
-                    self.ppu.mem.write(@truncate(u14, self.ppu.vram_addr.value), val);
+                    self.ppu.mem.write(@truncate(self.ppu.vram_addr.value), val);
                     self.ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
                 },
             }

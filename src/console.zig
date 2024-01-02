@@ -30,7 +30,7 @@ pub fn Console(comptime config: Config) type {
     return struct {
         const Self = @This();
 
-        allocator: *Allocator,
+        allocator: Allocator,
 
         cart: Cart(config),
         ppu: Ppu(config),
@@ -59,7 +59,7 @@ pub fn Console(comptime config: Config) type {
 
         pub fn init(
             self: *Self,
-            allocator: *Allocator,
+            allocator: Allocator,
             pixel_buffer: *video.PixelBuffer(config.method),
             audio_context: *audio.Context(config.method),
         ) void {

@@ -22,23 +22,21 @@ pub fn Cart(comptime config: Config) type {
             };
         }
 
-        pub fn deinit(self: Self, allocator: *Allocator) void {
+        pub fn deinit(self: Self, allocator: Allocator) void {
             if (!self.rom_loaded) {
                 return;
             }
             self.mapper.deinit(allocator);
         }
 
-        pub fn loadRom(self: *Self, allocator: *Allocator, console: *Console(config), info: *ines.RomInfo) !void {
+        pub fn loadRom(self: *Self, allocator: Allocator, console: *Console(config), info: *ines.RomInfo) !void {
             if (self.rom_loaded) {
                 self.mapper.deinit(allocator);
             }
 
             std.log.info("Using mapper {:0>3}", .{info.mapper});
 
-            const inits = comptime blk: {
-                break :blk mapper.inits(config);
-            };
+            const inits = comptime mapper.inits(config);
             self.mapper = (try inits[info.mapper](allocator, console, info)) orelse
                 return error{MapperNotImplemented}.MapperNotImplemented;
 

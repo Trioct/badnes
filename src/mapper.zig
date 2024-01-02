@@ -15,7 +15,7 @@ fn MapperInitFn(comptime config: Config) type {
 }
 
 fn MapperInitFnSafe(comptime T: type, comptime config: Config) type {
-    return fn (*Allocator, *Console(config), *ines.RomInfo) Allocator.Error!?T;
+    return *const fn (Allocator, *Console(config), *ines.RomInfo) Allocator.Error!?T;
 }
 
 pub fn GenericMapper(comptime config: Config) type {
@@ -24,16 +24,16 @@ pub fn GenericMapper(comptime config: Config) type {
 
         mapper_ptr: OpaquePtr,
 
-        deinitFn: fn (Self, *Allocator) void,
+        deinitFn: *const fn (Self, Allocator) void,
 
-        cpuCycledFn: ?(fn (*Self) void),
-        mirrorNametableFn: fn (Self, u16) u12,
+        cpuCycledFn: ?*const fn (*Self) void,
+        mirrorNametableFn: *const fn (Self, u16) u12,
 
-        readPrgFn: fn (Self, u16) ?u8,
-        readChrFn: fn (Self, u16) u8,
+        readPrgFn: *const fn (Self, u16) ?u8,
+        readChrFn: *const fn (Self, u16) u8,
 
-        writePrgFn: fn (*Self, u16, u8) void,
-        writeChrFn: fn (*Self, u16, u8) void,
+        writePrgFn: *const fn (*Self, u16, u8) void,
+        writeChrFn: *const fn (*Self, u16, u8) void,
 
         const OpaquePtr = *align(@alignOf(usize)) opaque {};
 
@@ -41,7 +41,7 @@ pub fn GenericMapper(comptime config: Config) type {
             //Self.validateMapper(T);
             return (struct {
                 pub fn init(
-                    allocator: *Allocator,
+                    allocator: Allocator,
                     console: *Console(config),
                     info: *ines.RomInfo,
                 ) Allocator.Error!?Self {
@@ -52,7 +52,7 @@ pub fn GenericMapper(comptime config: Config) type {
                     const ptr = try allocator.create(T);
                     try T.initMem(ptr, allocator, console, info);
                     return Self{
-                        .mapper_ptr = @ptrCast(OpaquePtr, ptr),
+                        .mapper_ptr = @as(OpaquePtr, @ptrCast(ptr)),
 
                         .deinitFn = T.deinitMem,
 
@@ -69,7 +69,7 @@ pub fn GenericMapper(comptime config: Config) type {
             }).init;
         }
 
-        pub fn deinit(self: Self, allocator: *Allocator) void {
+        pub fn deinit(self: Self, allocator: Allocator) void {
             self.deinitFn(self, allocator);
         }
     };
@@ -85,11 +85,11 @@ pub fn UnimplementedMapper(comptime config: Config, comptime number: u8) type {
     return struct {
         dummy_is_not_implemented: u64,
 
-        fn initMem(_: *@This(), _: *Allocator, _: *Console(config), _: *ines.RomInfo) Allocator.Error!void {
+        fn initMem(_: *@This(), _: Allocator, _: *Console(config), _: *ines.RomInfo) Allocator.Error!void {
             @panic(msg);
         }
 
-        fn deinitMem(_: G, _: *Allocator) void {
+        fn deinitMem(_: G, _: Allocator) void {
             @panic(msg);
         }
 
@@ -125,7 +125,7 @@ pub fn inits(comptime config: Config) [255]MapperInitFn(config) {
     types[4] = @import("mapper/mmc3.zig").Mapper(config);
 
     var result = [_]MapperInitFn(config){undefined} ** 255;
-    for (types) |To, i| {
+    for (types, 0..) |To, i| {
         if (To) |T| {
             result[i] = GenericMapper(config).setup(T);
         } else {

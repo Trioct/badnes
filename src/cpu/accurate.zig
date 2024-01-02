@@ -52,7 +52,7 @@ pub fn Cpu(comptime config: Config) type {
             padding: u5,
 
             pub fn value(self: IrqSource) u8 {
-                return @bitCast(u8, self);
+                return @bitCast(self);
             }
         };
 
@@ -108,8 +108,8 @@ pub fn Cpu(comptime config: Config) type {
             const oam_addr = self.ppu.reg.oam_addr;
             var i: usize = 0;
             while (i < 256) : (i += 1) {
-                const oam_i: u8 = oam_addr +% @truncate(u8, i);
-                self.ppu.oam.primary[oam_i] = self.mem.read((@as(u16, addr_high) << 8) | @truncate(u8, i));
+                const oam_i: u8 = oam_addr +% @as(u8, @truncate(i));
+                self.ppu.oam.primary[oam_i] = self.mem.read((@as(u16, addr_high) << 8) | @as(u8, @truncate(i)));
 
                 common.cpuCycled(self);
                 common.cpuCycled(self);
@@ -193,8 +193,8 @@ pub fn Cpu(comptime config: Config) type {
                     self.state.opcode = 0;
                 },
                 1 => self.readNextByte(),
-                2 => self.pushStack(@truncate(u8, self.reg.pc >> 8)),
-                3 => self.pushStack(@truncate(u8, self.reg.pc)),
+                2 => self.pushStack(@truncate(self.reg.pc >> 8)),
+                3 => self.pushStack(@truncate(self.reg.pc)),
                 4 => {
                     const brk_flag = if (self.irq_pin.brk) @as(u8, 0x10) else 0;
                     self.pushStack(self.reg.p | 0b0010_0000 | brk_flag);
@@ -440,7 +440,7 @@ pub fn Cpu(comptime config: Config) type {
                 else => unreachable,
             };
             if (cond) {
-                const new = @bitCast(u16, @bitCast(i16, self.reg.pc) +% @bitCast(i8, self.state.c_byte));
+                const new: u16 = @bitCast(@as(i16, @bitCast(self.reg.pc)) +% @as(i8, @bitCast(self.state.c_byte)));
                 flags.setMask(u16, &self.reg.pc, new, 0xff);
                 self.state.c_addr = new;
             } else {
@@ -462,7 +462,7 @@ pub fn Cpu(comptime config: Config) type {
                     std.debug.assert(self.state.opcode == 0x6c);
                     self.state.c_byte = self.mem.read(self.state.c_addr);
                 },
-                .op_jsr => self.pushStack(@truncate(u8, self.reg.pc >> 8)),
+                .op_jsr => self.pushStack(@truncate(self.reg.pc >> 8)),
                 .op_pla => {
                     self.reg.a = self.readStack();
                     self.reg.setFlagsNZ(self.reg.a);
@@ -525,7 +525,7 @@ pub fn Cpu(comptime config: Config) type {
                     self.reg.pc = (high << 8) | low;
                     self.finishInstruction();
                 },
-                .op_jsr => self.pushStack(@truncate(u8, self.reg.pc)),
+                .op_jsr => self.pushStack(@truncate(self.reg.pc)),
                 .op_rti => {
                     flags.setMask(u16, &self.reg.pc, self.readStack(), 0xff);
                     self.reg.s +%= 1;
@@ -619,7 +619,7 @@ pub fn Cpu(comptime config: Config) type {
 
                 .op_bit => {
                     const val = self.reg.a & byte;
-                    self.reg.setFlags("NVZ", (byte & 0xc0) | @as(u8, @boolToInt(val == 0)) << 1);
+                    self.reg.setFlags("NVZ", (byte & 0xc0) | @as(u8, @intFromBool(val == 0)) << 1);
                 },
 
                 .op_clc => self.reg.setFlag("C", false),
@@ -711,12 +711,12 @@ pub fn Cpu(comptime config: Config) type {
             const sum: u9 = @as(u9, self.reg.a) +
                 @as(u9, val) +
                 @as(u9, self.reg.getFlags("C"));
-            const sum_u8: u8 = @truncate(u8, sum);
+            const sum_u8: u8 = @truncate(sum);
 
             const n_flag = sum_u8 & 0x80;
             const v_flag = (((self.reg.a ^ sum_u8) & (val ^ sum_u8)) & 0x80) >> 1;
-            const z_flag = @as(u8, @boolToInt(sum_u8 == 0)) << 1;
-            const c_flag = @truncate(u1, (sum & 0x100) >> 8);
+            const z_flag = @as(u2, @intFromBool(sum_u8 == 0)) << 1;
+            const c_flag = @as(u1, @truncate((sum & 0x100) >> 8));
             self.reg.setFlags("NVZC", n_flag | v_flag | z_flag | c_flag);
 
             self.reg.a = sum_u8;
@@ -752,7 +752,7 @@ pub fn Cpu(comptime config: Config) type {
         fn logCycle(self: Self) void {
             const op_str = opToString(self.state.op);
 
-            const cycle = if (self.state.cycle == 15) -1 else @intCast(i5, self.state.cycle);
+            const cycle: i5 = if (self.state.cycle == 15) -1 else @intCast(self.state.cycle);
             std.debug.print("Ct: {}; C: {: >2}; {s}; PC: ${x:0>4}; Bus: ${x:0>2}; " ++
                 "A: ${x:0>2}; X: ${x:0>2}; Y: ${x:0>2}; P: %{b:0>8}; S: ${x:0>2}\n", .{
                 self.cycles,
@@ -802,7 +802,7 @@ pub fn Memory(comptime config: Config) type {
         pub fn peek(self: Self, addr: u16) u8 {
             switch (addr) {
                 0x0000...0x1fff => return self.ram[addr & 0x7ff],
-                0x2000...0x3fff => return self.ppu.reg.peek(@truncate(u3, addr)),
+                0x2000...0x3fff => return self.ppu.reg.peek(@truncate(addr)),
                 0x4020...0xffff => return self.cart.peekPrg(addr) orelse 0,
                 else => return 0,
             }
@@ -811,8 +811,8 @@ pub fn Memory(comptime config: Config) type {
         pub fn read(self: *Self, addr: u16) u8 {
             self.open_bus = switch (addr) {
                 0x0000...0x1fff => self.ram[addr & 0x7ff],
-                0x2000...0x3fff => self.ppu.reg.read(@truncate(u3, addr)),
-                0x4000...0x4013, 0x4015, 0x4017 => self.apu.read(@truncate(u5, addr)),
+                0x2000...0x3fff => self.ppu.reg.read(@truncate(addr)),
+                0x4000...0x4013, 0x4015, 0x4017 => self.apu.read(@truncate(addr)),
                 0x4014 => self.ppu.reg.io_bus,
                 0x4016 => self.controller.getNextButton(),
                 0x4018...0x401f => return self.open_bus,
@@ -825,8 +825,8 @@ pub fn Memory(comptime config: Config) type {
             self.open_bus = val;
             switch (addr) {
                 0x0000...0x1fff => self.ram[addr & 0x7ff] = val,
-                0x2000...0x3fff => self.ppu.reg.write(@truncate(u3, addr), val),
-                0x4000...0x4013, 0x4015, 0x4017 => self.apu.write(@truncate(u5, addr), val),
+                0x2000...0x3fff => self.ppu.reg.write(@truncate(addr), val),
+                0x4000...0x4013, 0x4015, 0x4017 => self.apu.write(@truncate(addr), val),
                 0x4014 => @fieldParentPtr(Cpu(config), "mem", self).dma(val),
                 0x4016 => if (val & 1 == 1) {
                     self.controller.strobe();

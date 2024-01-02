@@ -22,7 +22,7 @@ pub const FieldFlags = struct {
 pub fn CreateFlags(comptime T: type, comptime ff_defs: []const FieldFlagsDef) type {
     for (ff_defs) |ff_def| {
         if (std.meta.fieldIndex(T, ff_def.field)) |index| {
-            const t = std.meta.fields(T)[index].field_type;
+            const t = std.meta.fields(T)[index].type;
             if (t != u8) {
                 @compileError("Expected field \"" ++ ff_def.field ++ "\" to be a u8, got " ++ t);
             }
@@ -30,7 +30,7 @@ pub fn CreateFlags(comptime T: type, comptime ff_defs: []const FieldFlagsDef) ty
             @compileError("Field \"" ++ ff_def.field ++ "\" not in struct");
         }
 
-        for (ff_def.flags[0..(ff_def.flags.len - 1)]) |c, i| {
+        for (ff_def.flags[0..(ff_def.flags.len - 1)], 0..) |c, i| {
             if (ascii.isDigit(c)) {
                 @compileError("Digits not allowed in flags");
             }
@@ -66,11 +66,11 @@ pub fn CreateFlags(comptime T: type, comptime ff_defs: []const FieldFlagsDef) ty
                     }
                 }
 
-                var first_letter: u8 = for (field_flags.flags) |c| {
+                const first_letter: u8 = for (field_flags.flags) |c| {
                     if (c == '?') {
                         @compileError("'?' flag not allowed in get/set");
                     }
-                    if (ascii.isAlpha(c)) {
+                    if (ascii.isAlphabetic(c)) {
                         break c;
                     }
                 } else {

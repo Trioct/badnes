@@ -9,7 +9,7 @@ const Cpu = @import("cpu.zig").Cpu;
 const flags = @import("flags.zig");
 
 const cpu_freq = 1789773;
-const frame_counter_rate = 1 / 240.0;
+const frame_counter_rate = 1.0 / 240.0;
 
 const length_counter_table = [_]u8{
     10, 254, 20, 2,  40, 4,  80, 6,  160, 8,  60, 10, 14, 12, 26, 14,
@@ -40,14 +40,14 @@ pub fn Apu(comptime config: Config) type {
         audio_context: *audio.Context(config.method),
 
         frame_counter_timer: CycleTimer = blk: {
-            var timer = CycleTimer.init(@intToFloat(f32, cpu_freq) * frame_counter_rate);
+            var timer = CycleTimer.init(@as(f32, @floatFromInt(cpu_freq)) * frame_counter_rate);
             timer.setNext();
             break :blk timer;
         },
 
         output_timer: CycleTimer = blk: {
-            const freq_f = @intToFloat(f32, cpu_freq);
-            const sample_f = @intToFloat(f32, audio.Context(config.method).sample_rate);
+            const freq_f: f32 = @floatFromInt(cpu_freq);
+            const sample_f: f32 = @floatFromInt(audio.Context(config.method).sample_rate);
 
             var timer = CycleTimer.init(freq_f / sample_f);
             timer.setNext();
@@ -73,7 +73,7 @@ pub fn Apu(comptime config: Config) type {
 
                 const mod = std.math.modf(self.frac);
                 self.frac -= mod.ipart;
-                self.whole += @floatToInt(usize, mod.ipart);
+                self.whole += @intFromFloat(mod.ipart);
             }
 
             fn setNextFrom(self: *CycleTimer, cycle: usize) void {
@@ -121,11 +121,11 @@ pub fn Apu(comptime config: Config) type {
             switch (addr) {
                 0x15 => {
                     var val: u8 = 0;
-                    val |= @as(u7, @boolToInt(reg.frame_interrupt)) << 6;
-                    val |= @as(u4, @boolToInt(reg.noise.length_counter.value > 0)) << 3;
-                    val |= @as(u3, @boolToInt(reg.triangle.length_counter.value > 0)) << 2;
-                    val |= @as(u2, @boolToInt(reg.pulse2.length_counter.value > 0)) << 1;
-                    val |= @boolToInt(reg.pulse1.length_counter.value > 0);
+                    val |= @as(u7, @intFromBool(reg.frame_interrupt)) << 6;
+                    val |= @as(u4, @intFromBool(reg.noise.length_counter.value > 0)) << 3;
+                    val |= @as(u3, @intFromBool(reg.triangle.length_counter.value > 0)) << 2;
+                    val |= @as(u2, @intFromBool(reg.pulse2.length_counter.value > 0)) << 1;
+                    val |= @intFromBool(reg.pulse1.length_counter.value > 0);
 
                     reg.frame_interrupt = false;
                     self.cpu.clearIrqSource("apu_frame_counter");
@@ -141,13 +141,13 @@ pub fn Apu(comptime config: Config) type {
             const reg = &self.reg;
             switch (addr) {
                 // pulse
-                0x00...0x03 => reg.pulse1.write(@truncate(u2, addr), val),
-                0x04...0x07 => reg.pulse2.write(@truncate(u2, addr), val),
+                0x00...0x03 => reg.pulse1.write(@truncate(addr), val),
+                0x04...0x07 => reg.pulse2.write(@truncate(addr), val),
 
                 // triangle
                 0x08 => {
                     reg.triangle.length_counter.halt = flags.getMaskBool(u8, val, 0x80);
-                    reg.triangle.linear_counter.period = @truncate(u7, val);
+                    reg.triangle.linear_counter.period = @truncate(val);
                 },
                 0x0a => {
                     flags.setMask(u11, &reg.triangle.timer.period, val, 0xff);
@@ -162,14 +162,14 @@ pub fn Apu(comptime config: Config) type {
                 0x0c => {
                     reg.noise.length_counter.halt = flags.getMaskBool(u8, val, 0x20);
                     reg.noise.envelope.constant_volume = flags.getMaskBool(u8, val, 0x10);
-                    reg.noise.envelope.divider_period = @truncate(u4, val);
+                    reg.noise.envelope.divider_period = @truncate(val);
                 },
                 0x0e => {
                     reg.noise.mode = flags.getMaskBool(u8, val, 0x80);
                     const period_table = [_]u13{
                         4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
                     };
-                    reg.noise.timer.period = period_table[@truncate(u4, val)];
+                    reg.noise.timer.period = period_table[val & 0xf];
                 },
                 0x0f => {
                     reg.noise.length_counter.setValue(length_counter_table[val >> 3]);
@@ -185,7 +185,7 @@ pub fn Apu(comptime config: Config) type {
                 },
                 0x17 => {
                     // TODO: not sure if accurate
-                    reg.frame_counter_mode = @truncate(u1, val >> 7);
+                    reg.frame_counter_mode = @truncate(val >> 7);
                     reg.irq_inhibit = flags.getMaskBool(u8, val, 0x40);
 
                     if (reg.irq_inhibit) {
@@ -222,12 +222,12 @@ pub fn Apu(comptime config: Config) type {
         }
 
         fn getOutput(self: *Self) f32 {
-            const p1_out = @intToFloat(f32, self.reg.pulse1.output());
-            const p2_out = @intToFloat(f32, self.reg.pulse2.output());
+            const p1_out: f32 = @floatFromInt(self.reg.pulse1.output());
+            const p2_out: f32 = @floatFromInt(self.reg.pulse2.output());
             const pulse_out = 0.00752 * (p1_out + p2_out);
 
-            const tri_out = @intToFloat(f32, self.reg.triangle.output());
-            const noise_out = @intToFloat(f32, self.reg.noise.output());
+            const tri_out: f32 = @floatFromInt(self.reg.triangle.output());
+            const noise_out: f32 = @floatFromInt(self.reg.noise.output());
 
             const tnd_out = 0.00851 * tri_out + 0.00494 * noise_out;
             return pulse_out + tnd_out;
@@ -243,7 +243,7 @@ pub fn Apu(comptime config: Config) type {
 
             if (self.frame_counter_timer.isDone(self.cycles)) {
                 if (self.reg.frame_counter_mode == 0) {
-                    switch (@truncate(u2, self.frame_counter)) {
+                    switch (@as(u2, @truncate(self.frame_counter))) {
                         0, 2 => {
                             self.stepQuarterFrame();
                         },
@@ -415,7 +415,7 @@ const PulseChannel = struct {
 
             self.target_period = @as(u12, timer.period) +% delta;
             if (self.divider_counter == 0 and self.enabled and !self.isMuting(timer.*) and self.shift_count != 0) {
-                timer.period = @truncate(u11, self.target_period);
+                timer.period = @truncate(self.target_period);
             }
             if (self.divider_counter == 0 or self.reload) {
                 self.divider_counter = self.divider_period;
@@ -437,17 +437,17 @@ const PulseChannel = struct {
     fn write(self: *PulseChannel, addr: u2, val: u8) void {
         switch (addr) {
             0x00 => {
-                self.duty_table = @truncate(u2, val >> 6);
+                self.duty_table = @truncate(val >> 6);
                 self.length_counter.halt = flags.getMaskBool(u8, val, 0x20);
                 self.envelope.constant_volume = flags.getMaskBool(u8, val, 0x10);
-                self.envelope.divider_period = @truncate(u4, val);
+                self.envelope.divider_period = @truncate(val);
             },
             0x01 => {
                 self.sweep.enabled = (val & 0x80) != 0;
                 self.sweep.negate = (val & 0x08) != 0;
                 self.sweep.reload = true;
-                self.sweep.divider_period = @truncate(u3, val >> 4);
-                self.sweep.shift_count = @truncate(u3, val);
+                self.sweep.divider_period = @truncate(val >> 4);
+                self.sweep.shift_count = @truncate(val);
             },
             0x02 => {
                 flags.setMask(u11, &self.timer.period, val, 0xff);
@@ -558,7 +558,7 @@ pub const NoiseChannel = struct {
             self.timer.reset();
 
             const second_bit = if (self.mode) @as(u3, 6) else 1;
-            const feedback: u1 = @truncate(u1, (self.shift & 1) ^ (self.shift >> second_bit));
+            const feedback: u1 = @truncate((self.shift & 1) ^ (self.shift >> second_bit));
             self.shift >>= 1;
             flags.setMask(u15, &self.shift, @as(u15, feedback) << 14, 0x4000);
         } else {

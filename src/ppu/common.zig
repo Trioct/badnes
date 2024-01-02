@@ -16,19 +16,19 @@ pub const Address = struct {
     value: u15,
 
     pub fn coarseX(self: Address) u5 {
-        return @truncate(u5, self.value);
+        return @truncate(self.value);
     }
 
     pub fn coarseY(self: Address) u5 {
-        return @truncate(u5, self.value >> 5);
+        return @truncate(self.value >> 5);
     }
 
     pub fn nametableSelect(self: Address) u2 {
-        return @truncate(u2, self.value >> 10);
+        return @truncate(self.value >> 10);
     }
 
     pub fn fineY(self: Address) u3 {
-        return @truncate(u3, self.value >> 12);
+        return @truncate(self.value >> 12);
     }
 
     pub fn fullY(self: Address) u8 {

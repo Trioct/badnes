@@ -6,14 +6,12 @@ const IoMethod = @import("console.zig").IoMethod;
 pub const VideoMethod = enum {
     pure,
     sdl_basic,
-    sdl_imgui,
 };
 
 pub fn Context(comptime method: VideoMethod) type {
     switch (method) {
         .pure => return PureContext,
-        .sdl_basic => return @import("sdl/context.zig").Context(false),
-        .sdl_imgui => return @import("sdl/context.zig").Context(true),
+        .sdl_basic => return @import("sdl/context.zig").Context,
     }
 }
 
@@ -30,13 +28,13 @@ pub const PureContext = struct {
     const Pb = struct {
         pixels: []u32,
 
-        pub fn init(allocator: *Allocator) !Pb {
+        pub fn init(allocator: Allocator) !Pb {
             return Pb{
                 .pixels = try allocator.alloc(u32, 256 * 240),
             };
         }
 
-        pub fn deinit(self: Pb, allocator: *Allocator) void {
+        pub fn deinit(self: Pb, allocator: Allocator) void {
             allocator.free(self.pixels);
         }
 
@@ -45,13 +43,13 @@ pub const PureContext = struct {
         }
     };
 
-    pub fn init(allocator: *Allocator) !PureContext {
+    pub fn init(allocator: Allocator) !PureContext {
         return PureContext{
             .pixel_buffer = try Pb.init(allocator),
         };
     }
 
-    pub fn deinit(self: PureContext, allocator: *Allocator) void {
+    pub fn deinit(self: PureContext, allocator: Allocator) void {
         self.pixel_buffer.deinit(allocator);
     }
 
