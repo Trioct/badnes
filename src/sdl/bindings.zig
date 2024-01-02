@@ -9,9 +9,22 @@ pub const c = @cImport({
 
 pub const Sdl = struct {
     const empty_options = .{ .sdl = .{} };
+    pub const Error = CError.SdlError;
 
     pub const Window = c.SDL_Window;
     pub const GLContext = c.SDL_GLContext;
+    pub const Event = c.SDL_Event;
+    pub const AudioDeviceId = c.SDL_AudioDeviceID;
+    pub const AudioSpec = c.SDL_AudioSpec;
+
+    pub const init_timer = c.SDL_INIT_TIMER;
+    pub const init_audio = c.SDL_INIT_AUDIO;
+    pub const init_video = c.SDL_INIT_VIDEO;
+    pub const init_joystick = c.SDL_INIT_JOYSTICK;
+    pub const init_haptic = c.SDL_INIT_HAPTIC;
+    pub const init_gamecontroller = c.SDL_INIT_GAMECONTROLLER;
+    pub const init_events = c.SDL_INIT_EVENTS;
+    pub const init_everything = c.SDL_INIT_EVERYTHING;
 
     pub const init = wrap(c.SDL_Init, empty_options);
     pub const quit = wrap(c.SDL_Quit, empty_options);
@@ -42,6 +55,13 @@ pub const Sdl = struct {
 
 pub const Gl = struct {
     const empty_options = .{ .opengl = .{} };
+    pub const Error = CError.GlError;
+
+    pub const Int = c.GLint;
+    pub const Uint = c.GLuint;
+    pub const Sizei = c.GLsizei;
+    pub const Float = c.GLfloat;
+    pub const Void = c.GLvoid;
 
     pub const viewport = wrap(c.glViewport, empty_options);
     pub const enable = wrap(c.glEnable, empty_options);
@@ -204,11 +224,39 @@ fn WrappedSignature(comptime T: type, comptime options: WrapOptions) type {
     const RetType = WrappedFinalReturn(ReturnType(T), options);
     switch (@typeInfo(T)) {
         .Fn => |func_info| {
-            if (func_info.params.len == 0) {
-                return (fn () RetType);
-            } else {
-                return (fn (anytype) RetType);
-            }
+            const params = func_info.params;
+            return switch (func_info.params.len) {
+                0 => fn () RetType,
+                1 => fn (params[0].type.?) RetType,
+                2 => fn (params[0].type.?, params[1].type.?) RetType,
+                3 => fn (
+                    params[0].type.?,
+                    params[1].type.?,
+                    params[2].type.?,
+                ) RetType,
+                4 => fn (
+                    params[0].type.?,
+                    params[1].type.?,
+                    params[2].type.?,
+                    params[3].type.?,
+                ) RetType,
+                5 => fn (
+                    params[0].type.?,
+                    params[1].type.?,
+                    params[2].type.?,
+                    params[3].type.?,
+                    params[4].type.?,
+                ) RetType,
+                6 => fn (
+                    params[0].type.?,
+                    params[1].type.?,
+                    params[2].type.?,
+                    params[3].type.?,
+                    params[4].type.?,
+                    params[5].type.?,
+                ) RetType,
+                else => fn (anytype) RetType,
+            };
         },
         else => @compileError("Can't wrap a non-function"),
     }
@@ -306,19 +354,78 @@ fn wrap(
     const RetType = WrappedFinalReturn(ReturnType(T), options);
     switch (@typeInfo(@TypeOf(func))) {
         .Fn => |func_info| {
-            if (func_info.params.len == 0) {
-                return (struct {
+            return switch (func_info.params.len) {
+                0 => struct {
                     fn f() RetType {
                         return wrapPrintError(options, wrapReturn(func(), options));
                     }
-                }).f;
-            } else {
-                return (struct {
-                    fn f(args: anytype) RetType {
-                        return wrapPrintError(options, wrapReturn(@call(.auto, func, args), options));
+                },
+                1 => struct {
+                    const A1 = func_info.params[0].type.?;
+                    fn f(a1: A1) RetType {
+                        return wrapPrintError(options, wrapReturn(func(a1), options));
                     }
-                }).f;
-            }
+                },
+                2 => struct {
+                    const A1 = func_info.params[0].type.?;
+                    const A2 = func_info.params[1].type.?;
+                    fn f(a1: A1, a2: A2) RetType {
+                        return wrapPrintError(options, wrapReturn(func(a1, a2), options));
+                    }
+                },
+                3 => struct {
+                    const A1 = func_info.params[0].type.?;
+                    const A2 = func_info.params[1].type.?;
+                    const A3 = func_info.params[2].type.?;
+                    fn f(a1: A1, a2: A2, a3: A3) RetType {
+                        return wrapPrintError(options, wrapReturn(func(a1, a2, a3), options));
+                    }
+                },
+                4 => struct {
+                    const A1 = func_info.params[0].type.?;
+                    const A2 = func_info.params[1].type.?;
+                    const A3 = func_info.params[2].type.?;
+                    const A4 = func_info.params[3].type.?;
+                    fn f(a1: A1, a2: A2, a3: A3, a4: A4) RetType {
+                        return wrapPrintError(
+                            options,
+                            wrapReturn(func(a1, a2, a3, a4), options),
+                        );
+                    }
+                },
+                5 => struct {
+                    const A1 = func_info.params[0].type.?;
+                    const A2 = func_info.params[1].type.?;
+                    const A3 = func_info.params[2].type.?;
+                    const A4 = func_info.params[3].type.?;
+                    const A5 = func_info.params[4].type.?;
+                    fn f(a1: A1, a2: A2, a3: A3, a4: A4, a5: A5) RetType {
+                        return wrapPrintError(
+                            options,
+                            wrapReturn(func(a1, a2, a3, a4, a5), options),
+                        );
+                    }
+                },
+                6 => struct {
+                    const A1 = func_info.params[0].type.?;
+                    const A2 = func_info.params[1].type.?;
+                    const A3 = func_info.params[2].type.?;
+                    const A4 = func_info.params[3].type.?;
+                    const A5 = func_info.params[4].type.?;
+                    const A6 = func_info.params[5].type.?;
+                    fn f(a1: A1, a2: A2, a3: A3, a4: A4, a5: A5, a6: A6) RetType {
+                        return wrapPrintError(
+                            options,
+                            wrapReturn(func(a1, a2, a3, a4, a5, a6), options),
+                        );
+                    }
+                },
+                else => struct {
+                    fn f(args: anytype) RetType {
+                        return wrapPrintError(options, @call(.auto, func, args));
+                    }
+                },
+            }.f;
         },
         else => @compileError("Can't wrap a non-function"),
     }

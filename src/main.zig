@@ -8,8 +8,7 @@ const Console = console_.Console;
 const Precision = console_.Precision;
 const IoMethod = console_.IoMethod;
 
-const sdl_bindings = @import("sdl/bindings.zig");
-const Sdl = sdl_bindings.Sdl;
+const Sdl = @import("sdl/bindings.zig").Sdl;
 const video = @import("video.zig");
 const audio = @import("audio.zig");
 
@@ -19,7 +18,7 @@ pub fn main() anyerror!void {
 
     const allocator = gpa.allocator();
 
-    try Sdl.init(.{sdl_bindings.c.SDL_INIT_VIDEO | sdl_bindings.c.SDL_INIT_AUDIO | sdl_bindings.c.SDL_INIT_EVENTS});
+    try Sdl.init(Sdl.init_video | Sdl.init_audio | Sdl.init_events);
     defer Sdl.quit();
 
     var console = Console(.{
@@ -46,12 +45,12 @@ pub fn main() anyerror!void {
         try console.loadRom(arg);
     }
 
-    var event: sdl_bindings.c.SDL_Event = undefined;
+    var event: Sdl.Event = undefined;
 
     var total_time: i128 = 0;
     var frames: usize = 0;
     mloop: while (true) {
-        while (Sdl.pollEvent(.{&event}) == 1) {
+        while (Sdl.pollEvent(&event) == 1) {
             if (!video_context.handleEvent(event)) {
                 break :mloop;
             }

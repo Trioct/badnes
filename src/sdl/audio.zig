@@ -7,7 +7,7 @@ const Sdl = bindings.Sdl;
 // TODO: make alternative that syncs video to audio instead of
 // trying to sync audio to video
 pub const Context = struct {
-    device: bindings.c.SDL_AudioDeviceID,
+    device: Sdl.AudioDeviceId,
     buffer: SampleBuffer,
 
     previous_sample: f32 = 0,
@@ -68,7 +68,7 @@ pub const Context = struct {
     }
 
     pub fn init(self: *Context) !void {
-        var want = bindings.c.SDL_AudioSpec{
+        var want = Sdl.AudioSpec{
             .freq = sample_rate,
             .format = bindings.c.AUDIO_F32SYS,
             .channels = 1,
@@ -82,25 +82,25 @@ pub const Context = struct {
             .size = 0,
         };
 
-        var have = std.mem.zeroes(bindings.c.SDL_AudioSpec);
-        self.device = Sdl.openAudioDevice(.{ null, 0, &want, &have, 0 });
+        var have = std.mem.zeroes(Sdl.AudioSpec);
+        self.device = Sdl.openAudioDevice(null, 0, &want, &have, 0);
         if (self.device == 0) {
-            return bindings.CError.SdlError;
+            return Sdl.Error;
         }
         self.pause();
     }
 
     pub fn deinit(self: *Context, allocator: Allocator) void {
-        Sdl.closeAudioDevice(.{self.device});
+        Sdl.closeAudioDevice(self.device);
         allocator.free(self.buffer.samples);
     }
 
     pub fn pause(self: Context) void {
-        Sdl.pauseAudioDevice(.{ self.device, 1 });
+        Sdl.pauseAudioDevice(self.device, 1);
     }
 
     pub fn unpause(self: Context) void {
-        Sdl.pauseAudioDevice(.{ self.device, 0 });
+        Sdl.pauseAudioDevice(self.device, 0);
     }
 
     pub fn addSample(self: *Context, val: f32) !void {

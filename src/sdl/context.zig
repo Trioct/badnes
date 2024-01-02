@@ -29,28 +29,28 @@ pub const Context = struct {
     };
 
     pub fn init(allocator: Allocator, title: [:0]const u8) !Context {
-        const window = try Sdl.createWindow(.{
+        const window = try Sdl.createWindow(
             title,
             c.SDL_WINDOWPOS_CENTERED,
             c.SDL_WINDOWPOS_CENTERED,
             256 * 3,
             240 * 3,
             c.SDL_WINDOW_OPENGL,
-        });
-        errdefer Sdl.destroyWindow(.{window});
+        );
+        errdefer Sdl.destroyWindow(window);
 
-        try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_MAJOR_VERSION, 3 });
-        try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_MINOR_VERSION, 0 });
-        try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_FLAGS, 0 });
-        try Sdl.glSetAttribute(.{ c.SDL_GL_CONTEXT_PROFILE_MASK, c.SDL_GL_CONTEXT_PROFILE_CORE });
+        try Sdl.glSetAttribute(c.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        try Sdl.glSetAttribute(c.SDL_GL_CONTEXT_MINOR_VERSION, 0);
+        try Sdl.glSetAttribute(c.SDL_GL_CONTEXT_FLAGS, 0);
+        try Sdl.glSetAttribute(c.SDL_GL_CONTEXT_PROFILE_MASK, c.SDL_GL_CONTEXT_PROFILE_CORE);
 
-        try Sdl.glSetAttribute(.{ c.SDL_GL_DOUBLEBUFFER, 1 });
-        try Sdl.glSetAttribute(.{ c.SDL_GL_DEPTH_SIZE, 0 });
+        try Sdl.glSetAttribute(c.SDL_GL_DOUBLEBUFFER, 1);
+        try Sdl.glSetAttribute(c.SDL_GL_DEPTH_SIZE, 0);
 
-        const gl_context = try Sdl.glCreateContext(.{window});
-        errdefer Sdl.glDeleteContext(.{gl_context});
-        try Sdl.glMakeCurrent(.{ window, gl_context });
-        try Sdl.glSetSwapInterval(.{0});
+        const gl_context = try Sdl.glCreateContext(window);
+        errdefer Sdl.glDeleteContext(gl_context);
+        try Sdl.glMakeCurrent(window, gl_context);
+        try Sdl.glSetSwapInterval(0);
 
         var self = Context{
             .allocator = allocator,
@@ -75,21 +75,21 @@ pub const Context = struct {
     pub fn deinit(self: *Context, allocator: Allocator) void {
         self.draw_context.deinit(allocator);
 
-        Sdl.glDeleteContext(.{self.gl_context});
-        Sdl.destroyWindow(.{self.window});
+        Sdl.glDeleteContext(self.gl_context);
+        Sdl.destroyWindow(self.window);
     }
 
     pub inline fn getGamePixelBuffer(self: *Context) *PixelBuffer {
         return self.draw_context.getGamePixelBuffer();
     }
 
-    pub inline fn handleEvent(self: *Context, event: c.SDL_Event) bool {
+    pub inline fn handleEvent(self: *Context, event: Sdl.Event) bool {
         return self.draw_context.handleEvent(event);
     }
 
     pub fn draw(self: *Context, draw_options: DrawOptions) !i128 {
         try self.draw_context.draw();
-        Sdl.glSwapWindow(.{self.window});
+        Sdl.glSwapWindow(self.window);
 
         const frame_ns: i128 = @intFromFloat(time.ns_per_s * draw_options.frametime);
         const now = time.nanoTimestamp();

@@ -17,7 +17,7 @@ pub const Controller = struct {
     pub fn strobe(self: *Controller) void {
         const keys = blk: {
             var length: c_int = 0;
-            var ret: [*]const u8 = Sdl.getKeyboardState(.{&length});
+            var ret: [*]const u8 = Sdl.getKeyboardState(&length);
             break :blk ret[0..@intCast(length)];
         };
 
