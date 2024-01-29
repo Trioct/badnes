@@ -96,7 +96,7 @@ pub fn Ppu(comptime config: Config) type {
                         } else {
                             break :blk bank | tile_offset_16 | 0x10;
                         }
-                    } else if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "S" })) {
+                    } else if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "S" })) {
                         break :blk 0x1000 | tile_offset;
                     } else {
                         break :blk tile_offset;
@@ -185,13 +185,13 @@ pub fn Ppu(comptime config: Config) type {
             }
 
             if (self.scanline == 241 and self.cycle == 1) {
-                self.reg.setFlag(.{ .field = "ppu_status", .flags = "V" }, true);
-                if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "V" })) {
+                self.reg.setFlag(.{ .field = .ppu_status, .flags = "V" }, true);
+                if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "V" })) {
                     self.cpu.setNmi();
                 }
                 self.present_frame = true;
             } else if (self.scanline == 261 and self.cycle == 1) {
-                self.reg.setFlags(.{ .field = "ppu_status", .flags = "VS" }, 0);
+                self.reg.setFlags(.{ .field = .ppu_status, .flags = "VS" }, 0);
                 self.evaluateSpritesFrame();
             }
         }
@@ -223,7 +223,7 @@ pub fn Ppu(comptime config: Config) type {
 
             const nametable_byte: u14 = self.mem.peek(0x2000 | @as(u14, @truncate(reverted_v.value & 0x1fff)));
             const addr = (nametable_byte << 4) | reverted_v.fineY();
-            const offset = if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "B" })) @as(u14, 0x1000) else 0;
+            const offset = if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "B" })) @as(u14, 0x1000) else 0;
             const pattern_table_byte1 = self.mem.peek(addr | offset);
             const pattern_table_byte2 = self.mem.peek(addr | 8 | offset);
             const p1: u1 = @truncate(pattern_table_byte1 >> (7 - @as(u3, @truncate(self.cycle +% self.fine_x))));
@@ -289,7 +289,7 @@ pub fn Ppu(comptime config: Config) type {
                     if (sprite_pattern_index != 0 and bg_pattern_index != 0) {
                         if (self.scanline_sprites.sprite_0_index) |i| {
                             if (sprite_index.? == i) {
-                                self.reg.setFlag(.{ .field = "ppu_status", .flags = "S" }, true);
+                                self.reg.setFlag(.{ .field = .ppu_status, .flags = "S" }, true);
                             }
                         }
                     }
@@ -423,23 +423,23 @@ fn Registers(comptime config: Config) type {
         ppu_addr: u8,
         ppu_data: u8,
 
-        const ff_masks = common.RegisterMasks(Self){};
+        const Flags = common.RegisterFlags(Self);
 
         // flag functions do not have side effects even when they should
-        fn getFlag(self: Self, comptime flags: FieldFlags) bool {
-            return ff_masks.getFlag(self, flags);
+        fn getFlag(self: Self, comptime flags: Flags.FF) bool {
+            return Flags.getFlag(self, flags);
         }
 
-        fn getFlags(self: Self, comptime flags: FieldFlags) u8 {
-            return ff_masks.getFlags(self, flags);
+        fn getFlags(self: Self, comptime flags: Flags.FF) u8 {
+            return Flags.getFlags(self, flags);
         }
 
-        fn setFlag(self: *Self, comptime flags: FieldFlags, val: bool) void {
-            return ff_masks.setFlag(self, flags, val);
+        fn setFlag(self: *Self, comptime flags: Flags.FF, val: bool) void {
+            return Flags.setFlag(self, flags, val);
         }
 
-        fn setFlags(self: *Self, comptime flags: FieldFlags, val: u8) void {
-            return ff_masks.setFlags(self, flags, val);
+        fn setFlags(self: *Self, comptime flags: Flags.FF, val: u8) void {
+            return Flags.setFlags(self, flags, val);
         }
 
         pub fn peek(self: Self, i: u3) u8 {
@@ -451,7 +451,7 @@ fn Registers(comptime config: Config) type {
             const val = self.peek(i);
             switch (i) {
                 2 => {
-                    ppu.reg.setFlag(.{ .field = "ppu_status", .flags = "V" }, false);
+                    ppu.reg.setFlag(.{ .field = .ppu_status, .flags = "V" }, false);
                     ppu.w = false;
                 },
                 4 => {

@@ -21,9 +21,9 @@ pub const Registers = struct {
     y: u8,
     p: u8,
 
-    const ff_masks = CreateFlags(Registers, ([_]FieldFlagsDef{
-        .{ .field = "p", .flags = "NV??DIZC" },
-    })[0..]){};
+    const Flags = CreateFlags(Registers, &.{
+        .{ .field = .p, .flags = "NV??DIZC" },
+    });
 
     /// Convenient for testing
     pub fn zeroes() Registers {
@@ -44,19 +44,19 @@ pub const Registers = struct {
     }
 
     pub fn getFlag(self: Registers, comptime flags: []const u8) bool {
-        return ff_masks.getFlag(self, .{ .flags = flags });
+        return Flags.getFlag(self, .{ .flags = flags });
     }
 
     pub fn getFlags(self: Registers, comptime flags: []const u8) u8 {
-        return ff_masks.getFlags(self, .{ .flags = flags });
+        return Flags.getFlags(self, .{ .flags = flags });
     }
 
     pub fn setFlag(self: *Registers, comptime flags: []const u8, val: bool) void {
-        return ff_masks.setFlag(self, .{ .flags = flags }, val);
+        return Flags.setFlag(self, .{ .flags = flags }, val);
     }
 
     pub fn setFlags(self: *Registers, comptime flags: []const u8, val: u8) void {
-        return ff_masks.setFlags(self, .{ .flags = flags }, val);
+        return Flags.setFlags(self, .{ .flags = flags }, val);
     }
 
     pub fn setFlagsNZ(self: *Registers, val: u8) void {

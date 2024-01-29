@@ -20,9 +20,9 @@ pub const PureController = struct {
     buttons_reload: u8 = 0,
     shift: u4 = 0,
 
-    const ff_masks = CreateFlags(PureController, ([_]FieldFlagsDef{
-        .{ .field = "buttons_reload", .flags = "RLDUSsBA" },
-    })[0..]){};
+    const Flags = CreateFlags(PureController, &.{
+        .{ .field = .buttons_reload, .flags = "RLDUSsBA" },
+    });
 
     pub fn strobe(self: *PureController) void {
         self.buttons = self.buttons_reload;
@@ -40,6 +40,6 @@ pub const PureController = struct {
     }
 
     pub fn holdButtons(self: *PureController, comptime buttons: []const u8) void {
-        ff_masks.setFlags(self, .{ .flags = buttons }, 0xff);
+        Flags.setFlags(self, .{ .flags = buttons }, 0xff);
     }
 };

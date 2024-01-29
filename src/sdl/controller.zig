@@ -10,9 +10,9 @@ pub const Controller = struct {
     buttons: u8 = 0,
     shift: u4 = 0,
 
-    const ff_masks = CreateFlags(Controller, ([_]FieldFlagsDef{
-        .{ .field = "buttons", .flags = "RLDUSsBA" },
-    })[0..]){};
+    const Flags = CreateFlags(Controller, &.{
+        .{ .field = .buttons, .flags = "RLDUSsBA" },
+    });
 
     pub fn strobe(self: *Controller) void {
         const keys = blk: {
@@ -61,6 +61,6 @@ pub const Controller = struct {
     }
 
     pub fn setButton(self: *Controller, comptime button: []const u8) void {
-        ff_masks.setFlag(self, .{ .flags = button }, true);
+        Flags.setFlag(self, .{ .flags = button }, true);
     }
 };

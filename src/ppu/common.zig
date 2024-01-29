@@ -4,12 +4,12 @@ const FieldFlagsDef = flags_.FieldFlagsDef;
 
 // https://wiki.nesdev.com/w/index.php?title=PPU_registers
 // slightly diverges from nesdev, the last char of flags 0 and 1 are made lowercase
-pub fn RegisterMasks(comptime T: type) type {
-    return CreateFlags(T, ([_]FieldFlagsDef{
-        .{ .field = "ppu_ctrl", .flags = "VPHBSINn" },
-        .{ .field = "ppu_mask", .flags = "BGRsbMmg" },
-        .{ .field = "ppu_status", .flags = "VSO?????" },
-    })[0..]);
+pub fn RegisterFlags(comptime T: type) type {
+    return CreateFlags(T, &.{
+        .{ .field = .ppu_ctrl, .flags = "VPHBSINn" },
+        .{ .field = .ppu_mask, .flags = "BGRsbMmg" },
+        .{ .field = .ppu_status, .flags = "VSO?????" },
+    });
 }
 
 pub const Address = struct {

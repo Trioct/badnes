@@ -126,14 +126,14 @@ pub fn Ppu(comptime config: Config) type {
 
         fn fetchLowBgTile(self: *Self) void {
             const addr = (@as(u14, self.current_nametable_byte) << 4) | self.vram_addr.fineY();
-            const offset = if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "B" })) @as(u14, 0x1000) else 0;
+            const offset = if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "B" })) @as(u14, 0x1000) else 0;
             const pattern_table_byte = self.mem.read(addr | offset);
             self.pattern_sr1.prepare(pattern_table_byte);
         }
 
         fn fetchHighBgTile(self: *Self) void {
             const addr = (@as(u14, self.current_nametable_byte) << 4) | self.vram_addr.fineY();
-            const offset = if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "B" })) @as(u14, 0x1000) else 0;
+            const offset = if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "B" })) @as(u14, 0x1000) else 0;
             const pattern_table_byte = self.mem.read(addr | offset | 8);
             self.pattern_sr2.prepare(pattern_table_byte);
         }
@@ -222,7 +222,7 @@ pub fn Ppu(comptime config: Config) type {
                             } else {
                                 break :blk bank | tile_offset_16 | 0x10;
                             }
-                        } else if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "S" })) {
+                        } else if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "S" })) {
                             break :blk 0x1000 | tile_offset;
                         } else {
                             break :blk tile_offset;
@@ -308,13 +308,13 @@ pub fn Ppu(comptime config: Config) type {
             }
 
             if (self.scanline == 241 and self.cycle == 1) {
-                self.reg.setFlag(.{ .field = "ppu_status", .flags = "V" }, true);
-                if (self.reg.getFlag(.{ .field = "ppu_ctrl", .flags = "V" })) {
+                self.reg.setFlag(.{ .field = .ppu_status, .flags = "V" }, true);
+                if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "V" })) {
                     self.cpu.setNmi();
                 }
                 self.present_frame = true;
             } else if (self.scanline == 261 and self.cycle == 1) {
-                self.reg.setFlags(.{ .field = "ppu_status", .flags = "VS" }, 0);
+                self.reg.setFlags(.{ .field = .ppu_status, .flags = "VS" }, 0);
                 self.odd_frame = !self.odd_frame;
             }
         }
@@ -345,7 +345,7 @@ pub fn Ppu(comptime config: Config) type {
                             sprite_attribute_index = @truncate(self.oam.sprite_attributes[i]);
                             sprite_behind = getMaskBool(u8, self.oam.sprite_attributes[i], 0x20);
                             if (i == 0 and self.oam.has_sprite_0 and bg_pattern_index != 0) {
-                                self.reg.setFlag(.{ .field = "ppu_status", .flags = "S" }, true);
+                                self.reg.setFlag(.{ .field = .ppu_status, .flags = "S" }, true);
                             }
                         }
                     } else if (self.oam.sprite_x_counters[i] > 0) {
@@ -468,27 +468,27 @@ pub fn Registers(comptime config: Config) type {
         io_bus: u8 = 0,
         vram_data_buffer: u8 = 0,
 
-        const ff_masks = common.RegisterMasks(Self){};
+        const Flags = common.RegisterFlags(Self);
 
         fn init(ppu: *Ppu(config)) Self {
             return Self{ .ppu = ppu };
         }
 
         // flag functions do not have side effects even when they should
-        fn getFlag(self: Self, comptime flags: FieldFlags) bool {
-            return ff_masks.getFlag(self, flags);
+        fn getFlag(self: Self, comptime flags: Flags.FF) bool {
+            return Flags.getFlag(self, flags);
         }
 
-        fn getFlags(self: Self, comptime flags: FieldFlags) u8 {
-            return ff_masks.getFlags(self, flags);
+        fn getFlags(self: Self, comptime flags: Flags.FF) u8 {
+            return Flags.getFlags(self, flags);
         }
 
-        fn setFlag(self: *Self, comptime flags: FieldFlags, val: bool) void {
-            return ff_masks.setFlag(self, flags, val);
+        fn setFlag(self: *Self, comptime flags: Flags.FF, val: bool) void {
+            return Flags.setFlag(self, flags, val);
         }
 
-        fn setFlags(self: *Self, comptime flags: FieldFlags, val: u8) void {
-            return ff_masks.setFlags(self, flags, val);
+        fn setFlags(self: *Self, comptime flags: Flags.FF, val: u8) void {
+            return Flags.setFlags(self, flags, val);
         }
 
         pub fn peek(self: Self, i: u3) u8 {
@@ -509,7 +509,7 @@ pub fn Registers(comptime config: Config) type {
                 0, 1, 3, 5, 6 => return self.io_bus,
                 2 => {
                     const prev = self.ppu_status;
-                    self.ppu.reg.setFlag(.{ .field = "ppu_status", .flags = "V" }, false);
+                    self.ppu.reg.setFlag(.{ .field = .ppu_status, .flags = "V" }, false);
                     self.write_toggle = false;
                     return prev | (self.io_bus & 0x1f);
                 },
