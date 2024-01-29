@@ -86,7 +86,7 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         fn renderingEnabled(self: Self) bool {
-            return self.reg.getFlags(.{ .flags = "sb" }) != 0;
+            return self.reg.getFlags(null, "sb") != 0;
         }
 
         fn onRenderScanline(self: Self) bool {
@@ -126,14 +126,14 @@ pub fn Ppu(comptime config: Config) type {
 
         fn fetchLowBgTile(self: *Self) void {
             const addr = (@as(u14, self.current_nametable_byte) << 4) | self.vram_addr.fineY();
-            const offset = if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "B" })) @as(u14, 0x1000) else 0;
+            const offset = if (self.reg.getFlag(.ppu_ctrl, "B")) @as(u14, 0x1000) else 0;
             const pattern_table_byte = self.mem.read(addr | offset);
             self.pattern_sr1.prepare(pattern_table_byte);
         }
 
         fn fetchHighBgTile(self: *Self) void {
             const addr = (@as(u14, self.current_nametable_byte) << 4) | self.vram_addr.fineY();
-            const offset = if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "B" })) @as(u14, 0x1000) else 0;
+            const offset = if (self.reg.getFlag(.ppu_ctrl, "B")) @as(u14, 0x1000) else 0;
             const pattern_table_byte = self.mem.read(addr | offset | 8);
             self.pattern_sr2.prepare(pattern_table_byte);
         }
@@ -170,7 +170,7 @@ pub fn Ppu(comptime config: Config) type {
                         self.oam.readForSecondary();
                         return;
                     } else if (self.oam.primary_index & 3 == 0) {
-                        const sprite_height = if (self.reg.getFlag(.{ .flags = "H" })) @as(u5, 16) else 8;
+                        const sprite_height = if (self.reg.getFlag(null, "H")) @as(u5, 16) else 8;
                         // check if y is in range
                         const sprite_y = self.oam.temp_read_byte;
                         if (sprite_y <= self.scanline and @as(u9, sprite_y) + sprite_height > self.scanline) {
@@ -213,7 +213,7 @@ pub fn Ppu(comptime config: Config) type {
 
                     const tile_offset = @as(u14, tile_index) << 4;
                     const pattern_offset = blk: {
-                        if (self.reg.getFlag(.{ .flags = "H" })) {
+                        if (self.reg.getFlag(null, "H")) {
                             const bank = @as(u14, tile_index & 1) << 12;
                             const tile_offset_16 = tile_offset & ~@as(u14, 0x10);
 
@@ -222,7 +222,7 @@ pub fn Ppu(comptime config: Config) type {
                             } else {
                                 break :blk bank | tile_offset_16 | 0x10;
                             }
-                        } else if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "S" })) {
+                        } else if (self.reg.getFlag(.ppu_ctrl, "S")) {
                             break :blk 0x1000 | tile_offset;
                         } else {
                             break :blk tile_offset;
@@ -308,20 +308,20 @@ pub fn Ppu(comptime config: Config) type {
             }
 
             if (self.scanline == 241 and self.cycle == 1) {
-                self.reg.setFlag(.{ .field = .ppu_status, .flags = "V" }, true);
-                if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "V" })) {
+                self.reg.setFlag(.ppu_status, "V", true);
+                if (self.reg.getFlag(.ppu_ctrl, "V")) {
                     self.cpu.setNmi();
                 }
                 self.present_frame = true;
             } else if (self.scanline == 261 and self.cycle == 1) {
-                self.reg.setFlags(.{ .field = .ppu_status, .flags = "VS" }, 0);
+                self.reg.setFlags(.ppu_status, "VS", 0);
                 self.odd_frame = !self.odd_frame;
             }
         }
 
         fn drawPixel(self: *Self) void {
             const bg_pattern_index: u2 = blk: {
-                if (self.reg.getFlag(.{ .flags = "b" })) {
+                if (self.reg.getFlag(null, "b")) {
                     const p1 = self.pattern_sr1.get(self.fine_x);
                     const p2 = self.pattern_sr2.get(self.fine_x);
                     break :blk p1 | (@as(u2, p2) << 1);
@@ -333,7 +333,7 @@ pub fn Ppu(comptime config: Config) type {
             var sprite_pattern_index: u2 = 0;
             var sprite_attribute_index: u2 = 0;
             var sprite_behind: bool = false;
-            if (self.reg.getFlag(.{ .flags = "s" })) {
+            if (self.reg.getFlag(null, "s")) {
                 var i: usize = 0;
                 while (i < self.oam.active_sprites) : (i += 1) {
                     if (sprite_pattern_index == 0 and self.oam.sprite_x_counters[i] == 0) {
@@ -345,7 +345,7 @@ pub fn Ppu(comptime config: Config) type {
                             sprite_attribute_index = @truncate(self.oam.sprite_attributes[i]);
                             sprite_behind = getMaskBool(u8, self.oam.sprite_attributes[i], 0x20);
                             if (i == 0 and self.oam.has_sprite_0 and bg_pattern_index != 0) {
-                                self.reg.setFlag(.{ .field = .ppu_status, .flags = "S" }, true);
+                                self.reg.setFlag(.ppu_status, "S", true);
                             }
                         }
                     } else if (self.oam.sprite_x_counters[i] > 0) {
@@ -475,20 +475,38 @@ pub fn Registers(comptime config: Config) type {
         }
 
         // flag functions do not have side effects even when they should
-        fn getFlag(self: Self, comptime flags: Flags.FF) bool {
-            return Flags.getFlag(self, flags);
+        fn getFlag(
+            self: Self,
+            comptime field: ?Flags.FieldEnum,
+            comptime flags: []const u8,
+        ) bool {
+            return Flags.getFlag(field, flags, self);
         }
 
-        fn getFlags(self: Self, comptime flags: Flags.FF) u8 {
-            return Flags.getFlags(self, flags);
+        fn getFlags(
+            self: Self,
+            comptime field: ?Flags.FieldEnum,
+            comptime flags: []const u8,
+        ) u8 {
+            return Flags.getFlags(field, flags, self);
         }
 
-        fn setFlag(self: *Self, comptime flags: Flags.FF, val: bool) void {
-            return Flags.setFlag(self, flags, val);
+        fn setFlag(
+            self: *Self,
+            comptime field: ?Flags.FieldEnum,
+            comptime flags: []const u8,
+            val: bool,
+        ) void {
+            return Flags.setFlag(field, flags, self, val);
         }
 
-        fn setFlags(self: *Self, comptime flags: Flags.FF, val: u8) void {
-            return Flags.setFlags(self, flags, val);
+        fn setFlags(
+            self: *Self,
+            comptime field: ?Flags.FieldEnum,
+            comptime flags: []const u8,
+            val: u8,
+        ) void {
+            return Flags.setFlags(field, flags, self, val);
         }
 
         pub fn peek(self: Self, i: u3) u8 {
@@ -509,7 +527,7 @@ pub fn Registers(comptime config: Config) type {
                 0, 1, 3, 5, 6 => return self.io_bus,
                 2 => {
                     const prev = self.ppu_status;
-                    self.ppu.reg.setFlag(.{ .field = .ppu_status, .flags = "V" }, false);
+                    self.ppu.reg.setFlag(.ppu_status, "V", false);
                     self.write_toggle = false;
                     return prev | (self.io_bus & 0x1f);
                 },
@@ -530,7 +548,7 @@ pub fn Registers(comptime config: Config) type {
                             break :blk mem_val;
                         }
                     };
-                    self.ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    self.ppu.vram_addr.value +%= if (self.getFlag(null, "I")) @as(u8, 32) else 1;
                     return val;
                 },
             }
@@ -574,7 +592,7 @@ pub fn Registers(comptime config: Config) type {
                 },
                 7 => {
                     self.ppu.mem.write(@truncate(self.ppu.vram_addr.value), val);
-                    self.ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    self.ppu.vram_addr.value +%= if (self.getFlag(null, "I")) @as(u8, 32) else 1;
                 },
             }
         }

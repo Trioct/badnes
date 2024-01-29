@@ -44,19 +44,19 @@ pub const Registers = struct {
     }
 
     pub fn getFlag(self: Registers, comptime flags: []const u8) bool {
-        return Flags.getFlag(self, .{ .flags = flags });
+        return Flags.getFlag(null, flags, self);
     }
 
     pub fn getFlags(self: Registers, comptime flags: []const u8) u8 {
-        return Flags.getFlags(self, .{ .flags = flags });
+        return Flags.getFlags(null, flags, self);
     }
 
     pub fn setFlag(self: *Registers, comptime flags: []const u8, val: bool) void {
-        return Flags.setFlag(self, .{ .flags = flags }, val);
+        return Flags.setFlag(null, flags, self, val);
     }
 
     pub fn setFlags(self: *Registers, comptime flags: []const u8, val: u8) void {
-        return Flags.setFlags(self, .{ .flags = flags }, val);
+        return Flags.setFlags(null, flags, self, val);
     }
 
     pub fn setFlagsNZ(self: *Registers, val: u8) void {

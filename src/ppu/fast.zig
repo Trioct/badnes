@@ -72,7 +72,7 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         fn evaluateSpritesScanline(self: *Self) void {
-            const tall_sprites = self.reg.getFlag(.{ .flags = "H" });
+            const tall_sprites = self.reg.getFlag(null, "H");
             self.sprite_list.setYCutoff(@as(i16, @intCast(self.scanline)) - if (tall_sprites) @as(i16, 16) else 8);
 
             self.scanline_sprites.sprite_0_index = null;
@@ -96,7 +96,7 @@ pub fn Ppu(comptime config: Config) type {
                         } else {
                             break :blk bank | tile_offset_16 | 0x10;
                         }
-                    } else if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "S" })) {
+                    } else if (self.reg.getFlag(.ppu_ctrl, "S")) {
                         break :blk 0x1000 | tile_offset;
                     } else {
                         break :blk tile_offset;
@@ -156,7 +156,7 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         fn renderingEnabled(self: Self) bool {
-            return self.reg.getFlags(.{ .flags = "sb" }) != 0;
+            return self.reg.getFlags(null, "sb") != 0;
         }
 
         pub fn runCycle(self: *Self) void {
@@ -185,13 +185,13 @@ pub fn Ppu(comptime config: Config) type {
             }
 
             if (self.scanline == 241 and self.cycle == 1) {
-                self.reg.setFlag(.{ .field = .ppu_status, .flags = "V" }, true);
-                if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "V" })) {
+                self.reg.setFlag(.ppu_status, "V", true);
+                if (self.reg.getFlag(.ppu_ctrl, "V")) {
                     self.cpu.setNmi();
                 }
                 self.present_frame = true;
             } else if (self.scanline == 261 and self.cycle == 1) {
-                self.reg.setFlags(.{ .field = .ppu_status, .flags = "VS" }, 0);
+                self.reg.setFlags(.ppu_status, "VS", 0);
                 self.evaluateSpritesFrame();
             }
         }
@@ -217,13 +217,13 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         fn getBgPattern(self: Self, reverted_v: Address) u2 {
-            if (!self.reg.getFlag(.{ .flags = "b" })) {
+            if (!self.reg.getFlag(null, "b")) {
                 return 0;
             }
 
             const nametable_byte: u14 = self.mem.peek(0x2000 | @as(u14, @truncate(reverted_v.value & 0x1fff)));
             const addr = (nametable_byte << 4) | reverted_v.fineY();
-            const offset = if (self.reg.getFlag(.{ .field = .ppu_ctrl, .flags = "B" })) @as(u14, 0x1000) else 0;
+            const offset = if (self.reg.getFlag(.ppu_ctrl, "B")) @as(u14, 0x1000) else 0;
             const pattern_table_byte1 = self.mem.peek(addr | offset);
             const pattern_table_byte2 = self.mem.peek(addr | 8 | offset);
             const p1: u1 = @truncate(pattern_table_byte1 >> (7 - @as(u3, @truncate(self.cycle +% self.fine_x))));
@@ -233,7 +233,7 @@ pub fn Ppu(comptime config: Config) type {
         }
 
         fn getSpriteIndex(self: *Self) ?u8 {
-            if (!self.reg.getFlag(.{ .flags = "s" })) {
+            if (!self.reg.getFlag(null, "s")) {
                 return null;
             }
 
@@ -289,7 +289,7 @@ pub fn Ppu(comptime config: Config) type {
                     if (sprite_pattern_index != 0 and bg_pattern_index != 0) {
                         if (self.scanline_sprites.sprite_0_index) |i| {
                             if (sprite_index.? == i) {
-                                self.reg.setFlag(.{ .field = .ppu_status, .flags = "S" }, true);
+                                self.reg.setFlag(.ppu_status, "S", true);
                             }
                         }
                     }
@@ -426,20 +426,38 @@ fn Registers(comptime config: Config) type {
         const Flags = common.RegisterFlags(Self);
 
         // flag functions do not have side effects even when they should
-        fn getFlag(self: Self, comptime flags: Flags.FF) bool {
-            return Flags.getFlag(self, flags);
+        fn getFlag(
+            self: Self,
+            comptime field: ?Flags.FieldEnum,
+            comptime flags: []const u8,
+        ) bool {
+            return Flags.getFlag(field, flags, self);
         }
 
-        fn getFlags(self: Self, comptime flags: Flags.FF) u8 {
-            return Flags.getFlags(self, flags);
+        fn getFlags(
+            self: Self,
+            comptime field: ?Flags.FieldEnum,
+            comptime flags: []const u8,
+        ) u8 {
+            return Flags.getFlags(field, flags, self);
         }
 
-        fn setFlag(self: *Self, comptime flags: Flags.FF, val: bool) void {
-            return Flags.setFlag(self, flags, val);
+        fn setFlag(
+            self: *Self,
+            comptime field: ?Flags.FieldEnum,
+            comptime flags: []const u8,
+            val: bool,
+        ) void {
+            return Flags.setFlag(field, flags, self, val);
         }
 
-        fn setFlags(self: *Self, comptime flags: Flags.FF, val: u8) void {
-            return Flags.setFlags(self, flags, val);
+        fn setFlags(
+            self: *Self,
+            comptime field: ?Flags.FieldEnum,
+            comptime flags: []const u8,
+            val: u8,
+        ) void {
+            return Flags.setFlags(field, flags, self, val);
         }
 
         pub fn peek(self: Self, i: u3) u8 {
@@ -451,7 +469,7 @@ fn Registers(comptime config: Config) type {
             const val = self.peek(i);
             switch (i) {
                 2 => {
-                    ppu.reg.setFlag(.{ .field = .ppu_status, .flags = "V" }, false);
+                    ppu.reg.setFlag(.ppu_status, "V", false);
                     ppu.w = false;
                 },
                 4 => {
@@ -460,7 +478,7 @@ fn Registers(comptime config: Config) type {
                 7 => {
                     const prev = self.ppu_data;
                     self.ppu_data = ppu.mem.read(@truncate(ppu.vram_addr.value));
-                    ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    ppu.vram_addr.value +%= if (self.getFlag(null, "I")) @as(u8, 32) else 1;
                     return prev;
                 },
                 else => {},
@@ -498,7 +516,7 @@ fn Registers(comptime config: Config) type {
                 },
                 7 => {
                     ppu.mem.write(@truncate(ppu.vram_addr.value), val);
-                    ppu.vram_addr.value +%= if (self.getFlag(.{ .flags = "I" })) @as(u8, 32) else 1;
+                    ppu.vram_addr.value +%= if (self.getFlag(null, "I")) @as(u8, 32) else 1;
                 },
                 else => {},
             }

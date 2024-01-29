@@ -40,6 +40,6 @@ pub const PureController = struct {
     }
 
     pub fn holdButtons(self: *PureController, comptime buttons: []const u8) void {
-        Flags.setFlags(self, .{ .flags = buttons }, 0xff);
+        Flags.setFlags(null, buttons, self, 0xff);
     }
 };

@@ -51,6 +51,6 @@ pub const Controller = struct {
     }
 
     pub fn setButton(self: *Controller, comptime button: []const u8) void {
-        Flags.setFlag(self, .{ .flags = button }, true);
+        Flags.setFlag(null, button, self, true);
     }
 };
