@@ -2,7 +2,7 @@ const std = @import("std");
 
 const console = @import("src/console.zig");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -20,7 +20,7 @@ pub fn build(b: *std.build.Builder) void {
     exe.linkSystemLibrary("opengl");
 
     const exe_options = b.addOptions();
-    exe.addOptions("build_options", exe_options);
+    exe.root_module.addOptions("build_options", exe_options);
 
     exe_options.addOption(console.Precision, "precision", precision);
     exe_options.addOption(bool, "log_step", log_step);
@@ -41,7 +41,7 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    tests.addOptions("build_options", exe_options);
+    tests.root_module.addOptions("build_options", exe_options);
 
     const run_tests = b.addRunArtifact(tests);
 
