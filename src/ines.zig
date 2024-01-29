@@ -7,6 +7,7 @@ const io = std.io;
 const Allocator = std.mem.Allocator;
 
 const Rom = @import("cart.zig").Cart.Rom;
+const FlagMap = @import("flags.zig").DefaultFlagMap;
 
 pub const InesError = error{
     MissingMagic,
@@ -78,8 +79,8 @@ pub const RomInfo = struct {
             const bit1 = (flags6 >> 2) & 0b10;
             break :blk @enumFromInt(bit0 | bit1);
         };
-        const has_sram = (flags6 >> 1) & 1 == 1;
-        const has_trainer = (flags6 >> 2) & 1 == 1;
+        const has_sram = FlagMap.getFlag("1", flags6);
+        const has_trainer = FlagMap.getFlag("2", flags6);
 
         const flags7 = try reader.readByte();
         const mapper = (flags7 & 0xf) | (flags6 >> 4);
