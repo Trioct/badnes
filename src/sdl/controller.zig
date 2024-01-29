@@ -24,29 +24,19 @@ pub const Controller = struct {
         self.buttons = 0;
         self.shift = 0;
 
-        if (keys[bindings.c.SDL_SCANCODE_RIGHT] != 0) {
-            self.setButton("R");
-        }
-        if (keys[bindings.c.SDL_SCANCODE_LEFT] != 0) {
-            self.setButton("L");
-        }
-        if (keys[bindings.c.SDL_SCANCODE_DOWN] != 0) {
-            self.setButton("D");
-        }
-        if (keys[bindings.c.SDL_SCANCODE_UP] != 0) {
-            self.setButton("U");
-        }
-        if (keys[bindings.c.SDL_SCANCODE_A] != 0) {
-            self.setButton("S");
-        }
-        if (keys[bindings.c.SDL_SCANCODE_S] != 0) {
-            self.setButton("s");
-        }
-        if (keys[bindings.c.SDL_SCANCODE_Z] != 0) {
-            self.setButton("B");
-        }
-        if (keys[bindings.c.SDL_SCANCODE_X] != 0) {
-            self.setButton("A");
+        inline for (&.{
+            .{ bindings.c.SDL_SCANCODE_RIGHT, "R" },
+            .{ bindings.c.SDL_SCANCODE_LEFT, "L" },
+            .{ bindings.c.SDL_SCANCODE_DOWN, "D" },
+            .{ bindings.c.SDL_SCANCODE_UP, "U" },
+            .{ bindings.c.SDL_SCANCODE_A, "S" },
+            .{ bindings.c.SDL_SCANCODE_S, "s" },
+            .{ bindings.c.SDL_SCANCODE_Z, "B" },
+            .{ bindings.c.SDL_SCANCODE_X, "A" },
+        }) |pair| {
+            if (keys[pair.@"0"] != 0) {
+                self.setButton(pair.@"1");
+            }
         }
     }
 
