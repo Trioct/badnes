@@ -115,16 +115,16 @@ pub fn UnimplementedMapper(comptime config: Config, comptime number: u8) type {
     };
 }
 
-pub fn inits(comptime config: Config) [255]MapperInitFn(config) {
+pub fn inits(comptime config: Config) [256]MapperInitFn(config) {
     @setEvalBranchQuota(2000);
-    var types = [_]?type{null} ** 255;
+    var types = [_]?type{null} ** 256;
 
     types[0] = @import("mapper/nrom.zig").Mapper(config);
     types[1] = @import("mapper/mmc1.zig").Mapper(config);
     types[2] = @import("mapper/uxrom.zig").Mapper(config);
     types[4] = @import("mapper/mmc3.zig").Mapper(config);
 
-    var result = [_]MapperInitFn(config){undefined} ** 255;
+    var result = [_]MapperInitFn(config){undefined} ** 256;
     for (types, 0..) |To, i| {
         if (To) |T| {
             result[i] = GenericMapper(config).setup(T);

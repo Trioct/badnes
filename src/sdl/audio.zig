@@ -9,6 +9,7 @@ const Sdl = bindings.Sdl;
 pub const Context = struct {
     device: Sdl.AudioDeviceId,
     buffer: SampleBuffer,
+    volume: f32 = 1.0,
 
     previous_sample: f32 = 0,
 
@@ -52,7 +53,7 @@ pub const Context = struct {
         pub fn truncateStart(self: *SampleBuffer, count: usize) void {
             const prev_order = self.index > self.start;
             self.start = (self.start + count) % self.samples.len;
-            if (prev_order and (self.index < self.start)) {
+            if (prev_order and self.index < self.start) {
                 std.log.warn("Audio sample buffer ate its own tail", .{});
                 self.index = self.start;
             }
@@ -65,6 +66,10 @@ pub const Context = struct {
             .device = undefined,
             .buffer = SampleBuffer.init(buffer, (Context.sample_rate / 6) - 1024),
         };
+    }
+
+    pub fn free(self: *Context, allocator: Allocator) void {
+        allocator.free(self.buffer.samples);
     }
 
     pub fn init(self: *Context) !void {
@@ -92,7 +97,7 @@ pub const Context = struct {
 
     pub fn deinit(self: *Context, allocator: Allocator) void {
         Sdl.closeAudioDevice(self.device);
-        allocator.free(self.buffer.samples);
+        self.free(allocator);
     }
 
     pub fn pause(self: Context) void {
@@ -135,7 +140,7 @@ pub const Context = struct {
         var i: usize = 0;
         if (copy_rate >= 1) {
             for (buffer) |*b| {
-                b.* = context.buffer.get(i);
+                b.* = context.buffer.get(i) * context.volume;
 
                 const inc = copy_rate + copy_rem;
                 i += @intFromFloat(@trunc(inc));
@@ -143,7 +148,7 @@ pub const Context = struct {
             }
         } else {
             for (buffer) |*b| {
-                b.* = context.buffer.get(i);
+                b.* = context.buffer.get(i) * context.volume;
 
                 copy_rem += copy_rate;
                 if (copy_rem > 1) {

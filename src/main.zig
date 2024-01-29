@@ -30,8 +30,10 @@ pub fn main() anyerror!void {
     defer video_context.deinit(allocator);
 
     var audio_context = try audio.Context(.sdl).alloc(allocator);
-    // TODO: need a errdefer too but lazy
-    try audio_context.init();
+    audio_context.init() catch |err| {
+        audio_context.free(allocator);
+        return err;
+    };
     defer audio_context.deinit(allocator);
 
     console.init(allocator, video_context.getGamePixelBuffer(), &audio_context);

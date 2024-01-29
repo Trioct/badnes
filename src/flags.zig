@@ -44,6 +44,8 @@ pub fn CreateFlags(comptime T: type, comptime ff_defs: []const FieldFlagsDef) ty
     }
 
     return struct {
+        const Self = @This();
+
         /// If FieldFlags.fields == null, attempts to disambiguate using the first letter flag
         /// Psuedocode example: def flag1 = "abcd???g", flag2 = "a?dcefgh"
         /// getFlagMask("234") // ambiguous
@@ -118,26 +120,26 @@ pub fn CreateFlags(comptime T: type, comptime ff_defs: []const FieldFlagsDef) ty
             };
         }
 
-        pub fn getFlag(self: @This(), structure: T, comptime field_flags: FieldFlags) bool {
+        pub fn getFlag(self: Self, structure: T, comptime field_flags: FieldFlags) bool {
             if (field_flags.flags.len != 1) {
                 @compileError("getFlags expect a single flag");
             }
             return self.getFlags(structure, field_flags) != 0;
         }
 
-        pub fn getFlags(_: @This(), structure: T, comptime field_flags: FieldFlags) u8 {
+        pub fn getFlags(_: Self, structure: T, comptime field_flags: FieldFlags) u8 {
             const ff_mask = comptime getFlagMask(field_flags);
             return @field(structure, ff_mask.field) & ff_mask.mask;
         }
 
-        pub fn setFlag(self: @This(), structure: *T, comptime field_flags: FieldFlags, val: bool) void {
+        pub fn setFlag(self: Self, structure: *T, comptime field_flags: FieldFlags, val: bool) void {
             if (field_flags.flags.len != 1) {
                 @compileError("setFlags expect a single flag");
             }
             self.setFlags(structure, field_flags, if (val) @as(u8, 0xff) else 0x00);
         }
 
-        pub fn setFlags(_: @This(), structure: *T, comptime field_flags: FieldFlags, val: u8) void {
+        pub fn setFlags(_: Self, structure: *T, comptime field_flags: FieldFlags, val: u8) void {
             const ff_mask = comptime getFlagMask(field_flags);
             const field = &@field(structure, ff_mask.field);
             setMask(u8, field, val, ff_mask.mask);
