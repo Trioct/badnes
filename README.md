@@ -34,7 +34,7 @@ Few games are supported at the moment
 CPU:
 
 - [x] Accurate documented instructions
-- [x] Undocumented instructions
+- [ ] Undocumented instructions
 - [x] Separate fast and accurate implementations
 
 PPU:

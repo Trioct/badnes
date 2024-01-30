@@ -3,14 +3,14 @@ const bindings = @import("bindings.zig");
 const Sdl = bindings.Sdl;
 
 const flags_ = @import("../flags.zig");
-const CreateFlags = flags_.CreateFlags;
+const StructFlagsMap = flags_.StructFlagsMap;
 const FieldFlagsDef = flags_.FieldFlagsDef;
 
 pub const Controller = struct {
     buttons: u8 = 0,
     shift: u4 = 0,
 
-    const Flags = CreateFlags(Controller, &.{
+    const Flags = StructFlagsMap(Controller, &.{
         .{ .field = .buttons, .flags = "RLDUSsBA" },
     });
 

@@ -1,38 +1,45 @@
 const flags_ = @import("../flags.zig");
-const CreateFlags = flags_.CreateFlags;
+const FlagMap = flags_.FlagMap;
+const StructFlagsMap = flags_.StructFlagsMap;
 const FieldFlagsDef = flags_.FieldFlagsDef;
 
 // https://wiki.nesdev.com/w/index.php?title=PPU_registers
 // slightly diverges from nesdev, the last char of flags 0 and 1 are made lowercase
 pub fn RegisterFlags(comptime T: type) type {
-    return CreateFlags(T, &.{
-        .{ .field = .ppu_ctrl, .flags = "VPHBSINn" },
+    return StructFlagsMap(T, &.{
+        .{ .field = .ppu_ctrl, .flags = "VPHBSINN" },
         .{ .field = .ppu_mask, .flags = "BGRsbMmg" },
         .{ .field = .ppu_status, .flags = "VSO?????" },
     });
 }
 
 pub const Address = struct {
-    value: u15,
+    value: u15 = 0,
+    dummy_because_zig_is_bugged: void = {},
+
+    pub const Flags = StructFlagsMap(Address, &.{
+        .{ .field = .value, .flags = "yyyNNYYYYYXXXXX" },
+    });
 
     pub fn coarseX(self: Address) u5 {
-        return @truncate(self.value);
+        return @truncate(Flags.getFlags(null, "XXXXX", self));
     }
 
     pub fn coarseY(self: Address) u5 {
-        return @truncate(self.value >> 5);
+        return @truncate(Flags.getFlagsShifted(null, "YYYYY", self));
     }
 
     pub fn nametableSelect(self: Address) u2 {
-        return @truncate(self.value >> 10);
+        return @truncate(Flags.getFlagsShifted(null, "NN", self));
     }
 
     pub fn fineY(self: Address) u3 {
-        return @truncate(self.value >> 12);
+        return @truncate(Flags.getFlagsShifted(null, "yyy", self));
     }
 
     pub fn fullY(self: Address) u8 {
-        return (@as(u8, self.coarseY()) << 3) | self.fineY();
+        const coarse_y = Flags.getFlags(null, "YYYYY", self);
+        return @as(u8, coarse_y >> 2) | self.fineY();
     }
 };
 

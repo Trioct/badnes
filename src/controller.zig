@@ -5,7 +5,7 @@ const ArrayList = std.ArrayListUnmanaged;
 const IoMethod = @import("console.zig").IoMethod;
 
 const flags_ = @import("flags.zig");
-const CreateFlags = flags_.CreateFlags;
+const StructFlagsMap = flags_.StructFlagsMap;
 const FieldFlagsDef = flags_.FieldFlagsDef;
 
 pub fn Controller(comptime method: IoMethod) type {
@@ -20,7 +20,7 @@ pub const PureController = struct {
     buttons_reload: u8 = 0,
     shift: u4 = 0,
 
-    const Flags = CreateFlags(PureController, &.{
+    const Flags = StructFlagsMap(PureController, &.{
         .{ .field = .buttons_reload, .flags = "RLDUSsBA" },
     });
 

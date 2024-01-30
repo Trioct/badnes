@@ -12,7 +12,7 @@ const common = @import("common.zig");
 const Address = common.Address;
 
 const flags_ = @import("../flags.zig");
-const FieldFlags = flags_.FieldFlags;
+const FieldFlags = flags_.FieldFlagsMap;
 const setMask = flags_.setMask;
 const getMaskBool = flags_.getMaskBool;
 
@@ -29,8 +29,8 @@ pub fn Ppu(comptime config: Config) type {
         cycle: u9 = 0,
 
         // internal registers
-        vram_addr: Address = .{ .value = 0 },
-        vram_temp: Address = .{ .value = 0 },
+        vram_addr: Address = .{},
+        vram_temp: Address = .{},
         fine_x: u3 = 0,
         w: bool = false,
 
@@ -491,7 +491,7 @@ fn Registers(comptime config: Config) type {
             const val_u15: u15 = val;
             switch (i) {
                 0 => {
-                    setMask(u15, &ppu.vram_temp.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
+                    Address.Flags.setFlags(null, "NN", &ppu.vram_temp, (val_u15 & 3) << 10);
                 },
                 4 => {
                     ppu.mem.oam[self.oam_addr] = val;

@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const flags_ = @import("../flags.zig");
-const CreateFlags = flags_.CreateFlags;
+const StructFlagsMap = flags_.StructFlagsMap;
 const FieldFlagsDef = flags_.FieldFlagsDef;
 
 pub fn cpuCycled(self: anytype) void {
@@ -21,7 +21,7 @@ pub const Registers = struct {
     y: u8,
     p: u8,
 
-    const Flags = CreateFlags(Registers, &.{
+    const Flags = StructFlagsMap(Registers, &.{
         .{ .field = .p, .flags = "NV??DIZC" },
     });
 

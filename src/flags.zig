@@ -6,34 +6,29 @@ const meta = std.meta;
 pub const DefaultFlagMap = FlagMap("????????");
 
 pub fn FlagMap(comptime str: []const u8) type {
-    if (str.len != 8) {
-        @compileError("Flag definition must use 8 characters for 8 bits");
-    }
-
-    for (str, 0..) |c, i| {
+    for (str) |c| {
         if (ascii.isDigit(c)) {
             @compileError("Digits not allowed in flags");
-        }
-        if (c == '?') {
-            continue;
-        }
-        if (std.mem.indexOfScalar(u8, str[i + 1 ..], c) != null) {
-            @compileError("Duplicate flag '" ++ [1]u8{c} ++ "'");
         }
     }
 
     return struct {
-        pub fn getMask(comptime flags: []const u8) u8 {
-            var mask = 0;
-            for (flags) |c| {
+        pub const bits = str.len;
+        pub const T = meta.Int(.unsigned, bits);
+
+        pub fn getMask(comptime flags: []const u8) T {
+            comptime var mask = 0;
+            comptime var i: usize = 0;
+            inline for (flags) |c| {
                 const new_bit = blk: {
-                    if (ascii.isDigit(c)) {
+                    comptime if (ascii.isDigit(c)) {
                         break :blk 1 << (c - '0');
-                    } else if (std.mem.indexOfScalar(u8, str, c)) |i| {
-                        break :blk 1 << (7 - i);
+                    } else if (std.mem.indexOfScalarPos(u8, str, i, c)) |pos| {
+                        i = pos + 1;
+                        break :blk 1 << (bits - 1 - pos);
                     } else {
                         @compileError("Unknown flag '" ++ [1]u8{c} ++ "'");
-                    }
+                    };
                 };
                 if (mask & new_bit != 0) {
                     @compileError("Flag '" ++ [1]u8{c} ++
@@ -44,28 +39,35 @@ pub fn FlagMap(comptime str: []const u8) type {
             return mask;
         }
 
-        pub fn getFlag(comptime flags: []const u8, src: u8) bool {
+        pub fn getFlag(comptime flags: []const T, src: T) bool {
             if (flags.len != 1) {
                 @compileError("getFlags expects a single flag");
             }
             return getFlags(flags, src) != 0;
         }
 
-        pub fn getFlags(comptime flags: []const u8, src: u8) u8 {
+        pub fn getFlags(comptime flags: []const u8, src: T) T {
             const mask = comptime getMask(flags);
             return src & mask;
         }
 
-        pub fn setFlag(comptime flags: []const u8, src: *u8, val: bool) void {
+        /// Get flags but shift the result as far right as possible
+        pub fn getFlagsShifted(comptime flags: []const u8, src: T) T {
+            const mask = comptime getMask(flags);
+            const shift = @ctz(mask);
+            return (src & mask) >> shift;
+        }
+
+        pub fn setFlag(comptime flags: []const u8, src: *T, val: bool) void {
             if (flags.len != 1) {
                 @compileError("setFlags expects a single flag");
             }
             setFlags(flags, src, if (val) @as(u8, 0xff) else 0x00);
         }
 
-        pub fn setFlags(comptime flags: []const u8, src: *u8, val: u8) void {
+        pub fn setFlags(comptime flags: []const u8, src: *T, val: T) void {
             const mask = comptime getMask(flags);
-            setMask(u8, src, val, mask);
+            setMask(T, src, val, mask);
         }
     };
 }
@@ -84,13 +86,15 @@ pub fn FieldFlagsMap(comptime T: type) type {
     };
 }
 
-pub fn CreateFlags(comptime T: type, comptime ff_defs: []const FieldFlagsDef(T)) type {
+pub fn StructFlagsMap(comptime T: type, comptime ff_defs: []const FieldFlagsDef(T)) type {
     const fields = meta.fields(T);
 
     for (ff_defs, 0..) |ff_def, i| {
-        const t = fields[@intFromEnum(ff_def.field)].type;
-        if (t != u8) {
-            @compileError("Expected field \"" ++ ff_def.field ++ "\" to be a u8, got " ++ t);
+        const field = fields[@intFromEnum(ff_def.field)];
+        const ExpectedType = meta.Int(.unsigned, ff_def.flags.len);
+        if (field.type != ExpectedType) {
+            @compileError("Expected field \"" ++ field.name ++ "\" to be a " ++
+                @typeName(ExpectedType) ++ ", got " ++ @typeName(field.type));
         }
 
         for (ff_defs[i + 1 ..]) |ff_def2| {
@@ -173,9 +177,22 @@ pub fn CreateFlags(comptime T: type, comptime ff_defs: []const FieldFlagsDef(T))
             comptime field: ?FieldEnum,
             comptime flags: []const u8,
             structure: T,
-        ) u8 {
+        ) getFieldFlagsMap(field, flags).map.T {
             const ff_map = getFieldFlagsMap(field, flags);
             return ff_map.map.getFlags(
+                flags,
+                getFieldFromEnum(ff_map.field, structure),
+            );
+        }
+
+        /// Get flags but shift the result as far right as possible
+        pub fn getFlagsShifted(
+            comptime field: ?FieldEnum,
+            comptime flags: []const u8,
+            structure: T,
+        ) getFieldFlagsMap(field, flags).map.T {
+            const ff_map = getFieldFlagsMap(field, flags);
+            return ff_map.map.getFlagsShifted(
                 flags,
                 getFieldFromEnum(ff_map.field, structure),
             );
@@ -199,7 +216,7 @@ pub fn CreateFlags(comptime T: type, comptime ff_defs: []const FieldFlagsDef(T))
             comptime field: ?FieldEnum,
             comptime flags: []const u8,
             structure: *T,
-            val: u8,
+            val: getFieldFlagsMap(field, flags).map.T,
         ) void {
             const ff_map = getFieldFlagsMap(field, flags);
             ff_map.map.setFlags(
@@ -235,19 +252,21 @@ pub fn setMask(comptime T: type, lhs: *T, rhs: T, mask: T) void {
 
 const testing = std.testing;
 
-test "CreateFlags" {
+test "StructFlagsMap" {
     const TestStruct = struct {
         f1: u8,
         f2: u8,
         f3: u8,
         f4: u8,
+        f5: u6,
     };
 
-    const Flags = CreateFlags(TestStruct, &.{
+    const Flags = StructFlagsMap(TestStruct, &.{
         .{ .field = .f1, .flags = "abcdefgh" },
         .{ .field = .f2, .flags = "zyxwvuts" },
         .{ .field = .f3, .flags = "a?c?d?e?" },
         .{ .field = .f4, .flags = "a?c???w?" },
+        .{ .field = .f5, .flags = "xxxxyy" },
     });
 
     var test_struct = std.mem.zeroes(TestStruct);
@@ -264,16 +283,24 @@ test "CreateFlags" {
     Flags.setFlag(.f4, "7", &test_struct, false);
     Flags.setFlags(.f4, "65432w0", &test_struct, 0b000_0001);
     Flags.setFlag(.f4, "3", &test_struct, true);
+    Flags.setFlags(.f5, "xxxx", &test_struct, 0b01_1000);
+    Flags.setFlags(.f5, "yy", &test_struct, 0b00_0011);
 
     try testing.expectEqual(@as(u8, 0xfe), test_struct.f1);
     try testing.expectEqual(@as(u8, 0xab), test_struct.f2);
     try testing.expectEqual(@as(u8, 0xcd), test_struct.f3);
     try testing.expectEqual(@as(u8, 0x09), test_struct.f4);
+    try testing.expectEqual(@as(u6, 0x1b), test_struct.f5);
 
     try testing.expect(Flags.getFlag(null, "f", test_struct));
     try testing.expect(!Flags.getFlag(null, "h", test_struct));
     try testing.expect(!Flags.getFlag(.f4, "a", test_struct));
     try testing.expect(!Flags.getFlag(.f4, "w", test_struct));
-    try testing.expectEqual(@as(u8, 0xfe & 0b1110_0001), Flags.getFlags(null, "habc", test_struct));
-    try testing.expectEqual(@as(u8, 0b0000_0011), Flags.getFlags(null, "sw2t", test_struct));
+    try testing.expectEqual(@as(u8, 0xfe & 0b1110_0001), Flags.getFlags(null, "abch", test_struct));
+    try testing.expectEqual(@as(u8, 0b0000_0011), Flags.getFlags(null, "wts2", test_struct));
+    try testing.expectEqual(@as(u6, 0b11_1100), Flags.getFieldFlagsMap(.f5, "xxxx").map.getMask("xxxx"));
+    try testing.expectEqual(@as(u6, 0b01_1000), Flags.getFlags(.f5, "xxxx", test_struct));
+    try testing.expectEqual(@as(u6, 0b00_0110), Flags.getFlagsShifted(.f5, "xxxx", test_struct));
+    try testing.expectEqual(@as(u6, 0b00_0011), Flags.getFlags(.f5, "yy", test_struct));
+    try testing.expectEqual(@as(u6, 0b00_0011), Flags.getFlagsShifted(.f5, "yy", test_struct));
 }

@@ -12,7 +12,7 @@ const common = @import("common.zig");
 const Address = common.Address;
 
 const flags_ = @import("../flags.zig");
-const FieldFlags = flags_.FieldFlags;
+const FieldFlags = flags_.FieldFlagsMap;
 const setMask = flags_.setMask;
 const getMaskBool = flags_.getMaskBool;
 
@@ -31,8 +31,8 @@ pub fn Ppu(comptime config: Config) type {
         odd_frame: bool = false,
 
         // internal registers
-        vram_addr: Address = .{ .value = 0 },
-        vram_temp: Address = .{ .value = 0 },
+        vram_addr: Address = .{},
+        vram_temp: Address = .{},
         fine_x: u3 = 0,
 
         current_nametable_byte: u8 = 0,
@@ -559,7 +559,7 @@ pub fn Registers(comptime config: Config) type {
             const val_u15: u15 = val;
             switch (i) {
                 0 => {
-                    setMask(u15, &self.ppu.vram_temp.value, (val_u15 & 3) << 10, 0b000_1100_0000_0000);
+                    Address.Flags.setFlags(null, "NN", &self.ppu.vram_temp, (val_u15 & 3) << 10);
                     self.ppu_ctrl = val;
                 },
                 1 => self.ppu_mask = val,
@@ -570,15 +570,15 @@ pub fn Registers(comptime config: Config) type {
                     self.oam_addr +%= 1;
                 },
                 5 => if (!self.write_toggle) {
-                    setMask(u15, &self.ppu.vram_temp.value, val >> 3, 0x1f);
+                    Address.Flags.setFlags(null, "XXXXX", &self.ppu.vram_temp, val >> 3);
                     self.ppu.fine_x = @truncate(val);
                     self.write_toggle = true;
                 } else {
-                    setMask(
-                        u15,
-                        &self.ppu.vram_temp.value,
+                    Address.Flags.setFlags(
+                        null,
+                        "yyyYYYYY",
+                        &self.ppu.vram_temp,
                         ((val_u15 & 0xf8) << 2) | ((val_u15 & 7) << 12),
-                        0b111_0011_1110_0000,
                     );
                     self.write_toggle = false;
                 },
