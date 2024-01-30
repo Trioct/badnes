@@ -14,7 +14,8 @@ pub const Context = struct {
     previous_sample: f32 = 0,
 
     pub const sample_rate = 44100 / 2;
-    pub const sdl_buffer_size = 1024;
+    pub const sdl_buffer_size = 256;
+    pub const sample_buffer_size = 1024;
 
     const SampleBuffer = struct {
         samples: []f32,
@@ -61,10 +62,10 @@ pub const Context = struct {
     };
 
     pub fn alloc(allocator: Allocator) !Context {
-        const buffer = try allocator.alloc(f32, Context.sample_rate);
+        const buffer = try allocator.alloc(f32, Context.sample_buffer_size * 2);
         return Context{
             .device = undefined,
-            .buffer = SampleBuffer.init(buffer, (Context.sample_rate / 6) - 1024),
+            .buffer = SampleBuffer.init(buffer, sample_buffer_size),
         };
     }
 
@@ -128,15 +129,17 @@ pub const Context = struct {
 
         const ps: f64 = @floatFromInt(context.buffer.preferred_size);
         const length: f64 = @floatFromInt(context.buffer.length());
-        //const copy_rate: f64 = 0.25 * (1 + length / ps);
-        //const copy_rate: f64 = 0.25 * (length / ps - 1) + 1;
-        const copy_rate: f64 = blk: {
-            const temp = (length / ps) - 1;
-            break :blk temp * temp * temp + 1;
-        };
-        //const copy_rate: f64 = (std.math.tanh(16 * (length - ps) / sample_rate) + 1) / 2;
-        var copy_rem: f64 = 0;
+        const err = (length - ps) / ps;
 
+        const steepness: f64 = 10;
+        const plateau_size: f64 = 0.7;
+
+        const err_left = 1.0 / (1.0 + std.math.exp(steepness * (-plateau_size - err)));
+        const err_right = 1.0 / (1.0 + std.math.exp(steepness * (plateau_size - err)));
+        const err_smoothed = err_left + err_right - 1.0;
+        const copy_rate = err_smoothed + 1.0;
+
+        var copy_rem: f64 = 0;
         var i: usize = 0;
         if (copy_rate >= 1) {
             for (buffer) |*b| {
